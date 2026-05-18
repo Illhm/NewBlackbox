@@ -232,6 +232,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             if (requireForegroundIndex != -1) {
                 requireForeground = (boolean) args[requireForegroundIndex];
             }
+
+            if (requireForeground && resolveInfo.serviceInfo != null && "com.google.android.gms".equals(resolveInfo.serviceInfo.packageName)) {
+                Slog.d(TAG, "GMS background service restriction bypass: intercepting FOREGROUND requirement");
+                requireForeground = false;
+            }
+
             return BlackBoxCore.getBActivityManager().startService(intent, resolvedType, requireForeground, BActivityThread.getUserId());
         }
 

@@ -52,7 +52,7 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         
         
         String packageName = BActivityThread.getAppPackageName();
-        if (packageName != null && packageName.equals("com.google.android.gms")) {
+        if (packageName != null && packageName.equals("com.google.android.gms") && !BLocationManager.isFakeLocationEnable()) {
             
             if (method.getName().equals("getLastLocation") || 
                 method.getName().equals("getLastKnownLocation") ||

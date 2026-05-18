@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.util.Log;
 
+import android.content.pm.Signature;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
@@ -134,8 +135,8 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             int flags = MethodParameterUtils.toInt(args[1]);
             
             
-            if ("com.android.vending".equals(packageName)) {
-                return createFakeGooglePlayServicesPackageInfo();
+            if ("com.android.vending".equals(packageName) || "com.google.android.gms".equals(packageName)) {
+                return createFakeGooglePlayServicesPackageInfo(packageName, flags);
             }
             
             PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(packageName, flags, BlackBoxCore.getUserId());
@@ -160,20 +161,38 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             return null;
         }
         
-        private PackageInfo createFakeGooglePlayServicesPackageInfo() {
+        private PackageInfo createFakeGooglePlayServicesPackageInfo(String packageName, int flags) {
             PackageInfo packageInfo = new PackageInfo();
-            packageInfo.packageName = "com.android.vending";
-            packageInfo.versionName = "33.8.16-21";
-            packageInfo.versionCode = 83381621;
+            packageInfo.packageName = packageName;
+            if ("com.android.vending".equals(packageName)) {
+                packageInfo.versionName = "38.6.22-21";
+                packageInfo.versionCode = 83862221;
+            } else {
+                packageInfo.versionName = "23.48.16 (190400-588494026)";
+                packageInfo.versionCode = 234816038;
+            }
             
             ApplicationInfo appInfo = new ApplicationInfo();
-            appInfo.packageName = "com.android.vending";
-            appInfo.name = "Google Play Store";
+            appInfo.packageName = packageName;
+            appInfo.name = "com.android.vending".equals(packageName) ? "Google Play Store" : "Google Play services";
             appInfo.flags = ApplicationInfo.FLAG_SYSTEM;
             appInfo.uid = 10001; 
             packageInfo.applicationInfo = appInfo;
             
-            Slog.d(TAG, "GetPackageInfo: Providing fake Google Play Services info");
+            if ((flags & PackageManager.GET_SIGNATURES) != 0) {
+                // Return fake Google signature for spoofing
+                String googleSignature = "38918a453d07199354f8b19af05ec6562ced5788";
+                packageInfo.signatures = new Signature[]{new Signature(googleSignature)};
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                if ((flags & PackageManager.GET_SIGNING_CERTIFICATES) != 0) {
+                    // Use GET_SIGNATURES to avoid P+ classes complexity, but return properly mocked if requested.
+                    String googleSignature = "38918a453d07199354f8b19af05ec6562ced5788";
+                    packageInfo.signatures = new Signature[]{new Signature(googleSignature)};
+                }
+            }
+
+            Slog.d(TAG, "GetPackageInfo: Providing fake " + appInfo.name + " info with signature spoofing");
             return packageInfo;
         }
     }
