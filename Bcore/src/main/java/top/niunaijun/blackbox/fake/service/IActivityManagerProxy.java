@@ -224,7 +224,16 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             String resolvedType = (String) args[2];
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, BActivityThread.getUserId());
             if (resolveInfo == null) {
-                return method.invoke(who, args);
+                try {
+                    return method.invoke(who, args);
+                } catch (Exception e) {
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    if (cause instanceof SecurityException || cause.getClass().getSimpleName().contains("StartNotAllowedException")) {
+                        top.niunaijun.blackbox.utils.Slog.w(TAG, "Suppressed service start exception: " + cause.getMessage());
+                        return null;
+                    }
+                    throw e;
+                }
             }
 
             int requireForegroundIndex = getRequireForeground();
@@ -232,7 +241,23 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             if (requireForegroundIndex != -1) {
                 requireForeground = (boolean) args[requireForegroundIndex];
             }
-            return BlackBoxCore.getBActivityManager().startService(intent, resolvedType, requireForeground, BActivityThread.getUserId());
+
+            String pkgName = intent.getPackage();
+            if (pkgName == null && intent.getComponent() != null) {
+                pkgName = intent.getComponent().getPackageName();
+            }
+            if ("com.google.android.gms".equals(pkgName) || "com.google.android.gsf".equals(pkgName)) {
+                if (top.niunaijun.blackbox.utils.compat.BuildCompat.isU() || android.os.Build.VERSION.SDK_INT >= 34) {
+                    intent.putExtra("android.app.foregroundServiceType", 1073741824 /* FOREGROUND_SERVICE_TYPE_SPECIAL_USE */);
+                }
+            }
+
+            try {
+                return BlackBoxCore.getBActivityManager().startService(intent, resolvedType, requireForeground, BActivityThread.getUserId());
+            } catch (Exception e) {
+                top.niunaijun.blackbox.utils.Slog.w(TAG, "Suppressed BActivityManager startService exception: " + e.getMessage());
+                return null;
+            }
         }
 
         public int getRequireForeground() {
