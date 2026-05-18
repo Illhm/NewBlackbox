@@ -232,7 +232,27 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             if (requireForegroundIndex != -1) {
                 requireForeground = (boolean) args[requireForegroundIndex];
             }
-            return BlackBoxCore.getBActivityManager().startService(intent, resolvedType, requireForeground, BActivityThread.getUserId());
+
+            if (requireForeground && resolveInfo.serviceInfo != null) {
+                String pkg = resolveInfo.serviceInfo.packageName;
+                if ("com.google.android.gms".equals(pkg) || "com.google.android.gsf".equals(pkg)) {
+                    Slog.d(TAG, "GMS background service restriction bypass: intercepting FOREGROUND requirement");
+                    requireForeground = false;
+                }
+            }
+
+            try {
+                return BlackBoxCore.getBActivityManager().startService(intent, resolvedType, requireForeground, BActivityThread.getUserId());
+            } catch (Exception e) {
+                String errorMsg = e.getMessage();
+                if (errorMsg != null && (errorMsg.contains("BackgroundServiceStartNotAllowedException") ||
+                                         errorMsg.contains("ForegroundServiceStartNotAllowedException"))) {
+                    Slog.w(TAG, "Suppressed background service start exception for " + intent);
+                    // Return a fake ComponentName to satisfy the caller, bypassing the crash
+                    return new android.content.ComponentName(intent.getPackage() != null ? intent.getPackage() : "com.google.android.gms", "FakeService");
+                }
+                throw e;
+            }
         }
 
         public int getRequireForeground() {
