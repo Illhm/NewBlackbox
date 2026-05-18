@@ -53,11 +53,13 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         
         String packageName = BActivityThread.getAppPackageName();
         if (packageName != null && packageName.equals("com.google.android.gms")) {
-            
             if (method.getName().equals("getLastLocation") || 
                 method.getName().equals("getLastKnownLocation") ||
                 method.getName().equals("requestLocationUpdates")) {
                 Log.w(TAG, "Blocking location request from Google Play Services to prevent crash");
+                if (method.getReturnType() == int.class || method.getReturnType() == Integer.class) {
+                    return 0;
+                }
                 return null;
             }
         }

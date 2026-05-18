@@ -136,6 +136,14 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             
             if ("com.android.vending".equals(packageName)) {
                 return createFakeGooglePlayServicesPackageInfo();
+            } else if ("com.google.android.gms".equals(packageName)) {
+                return createFakeGmsPackageInfo(flags);
+            } else if ("com.google.android.gsf".equals(packageName)) {
+                return createFakeGsfPackageInfo();
+            } else if ("com.google.android.gms".equals(packageName)) {
+                return createFakeGmsPackageInfo(flags);
+            } else if ("com.google.android.gsf".equals(packageName)) {
+                return createFakeGsfPackageInfo();
             }
             
             PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(packageName, flags, BlackBoxCore.getUserId());
@@ -174,6 +182,86 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             packageInfo.applicationInfo = appInfo;
             
             Slog.d(TAG, "GetPackageInfo: Providing fake Google Play Services info");
+            return packageInfo;
+        }
+
+        private PackageInfo createFakeGmsPackageInfo(int flags) {
+            PackageInfo packageInfo = new PackageInfo();
+            packageInfo.packageName = "com.google.android.gms";
+            packageInfo.versionName = "24.08.12 (190400-610196652)";
+            packageInfo.versionCode = 240812038;
+
+            ApplicationInfo appInfo = new ApplicationInfo();
+            appInfo.packageName = "com.google.android.gms";
+            appInfo.name = "Google Play services";
+            appInfo.flags = ApplicationInfo.FLAG_SYSTEM;
+            appInfo.uid = 10002;
+            packageInfo.applicationInfo = appInfo;
+
+            if ((flags & PackageManager.GET_SIGNATURES) != 0) {
+                packageInfo.signatures = new android.content.pm.Signature[] {
+                    new android.content.pm.Signature("38918a453d07199354f8b19af05ec6562ced5788")
+                };
+            }
+
+            Slog.d(TAG, "GetPackageInfo: Providing fake GMS info with signature spoofing");
+            return packageInfo;
+        }
+
+        private PackageInfo createFakeGsfPackageInfo() {
+            PackageInfo packageInfo = new PackageInfo();
+            packageInfo.packageName = "com.google.android.gsf";
+            packageInfo.versionName = "14";
+            packageInfo.versionCode = 34;
+
+            ApplicationInfo appInfo = new ApplicationInfo();
+            appInfo.packageName = "com.google.android.gsf";
+            appInfo.name = "Google Services Framework";
+            appInfo.flags = ApplicationInfo.FLAG_SYSTEM;
+            appInfo.uid = 10003;
+            packageInfo.applicationInfo = appInfo;
+
+            Slog.d(TAG, "GetPackageInfo: Providing fake GSF info");
+            return packageInfo;
+        }
+
+        private PackageInfo createFakeGmsPackageInfo(int flags) {
+            PackageInfo packageInfo = new PackageInfo();
+            packageInfo.packageName = "com.google.android.gms";
+            packageInfo.versionName = "24.08.12 (190400-610196652)";
+            packageInfo.versionCode = 240812038;
+
+            ApplicationInfo appInfo = new ApplicationInfo();
+            appInfo.packageName = "com.google.android.gms";
+            appInfo.name = "Google Play services";
+            appInfo.flags = ApplicationInfo.FLAG_SYSTEM;
+            appInfo.uid = 10002;
+            packageInfo.applicationInfo = appInfo;
+
+            if ((flags & PackageManager.GET_SIGNATURES) != 0) {
+                packageInfo.signatures = new android.content.pm.Signature[] {
+                    new android.content.pm.Signature("38918a453d07199354f8b19af05ec6562ced5788")
+                };
+            }
+
+            Slog.d(TAG, "GetPackageInfo: Providing fake GMS info with signature spoofing");
+            return packageInfo;
+        }
+
+        private PackageInfo createFakeGsfPackageInfo() {
+            PackageInfo packageInfo = new PackageInfo();
+            packageInfo.packageName = "com.google.android.gsf";
+            packageInfo.versionName = "14";
+            packageInfo.versionCode = 34;
+
+            ApplicationInfo appInfo = new ApplicationInfo();
+            appInfo.packageName = "com.google.android.gsf";
+            appInfo.name = "Google Services Framework";
+            appInfo.flags = ApplicationInfo.FLAG_SYSTEM;
+            appInfo.uid = 10003;
+            packageInfo.applicationInfo = appInfo;
+
+            Slog.d(TAG, "GetPackageInfo: Providing fake GSF info");
             return packageInfo;
         }
     }
@@ -368,7 +456,10 @@ public class IPackageManagerProxy extends BinderInvocationStub {
     public static class GetInstallerPackageName extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            
+            String packageName = (String) args[0];
+            if ("com.google.android.gms".equals(packageName) || "com.android.vending".equals(packageName) || "com.google.android.gsf".equals(packageName)) {
+                return "com.android.vending";
+            }
             return "com.android.vending";
         }
     }

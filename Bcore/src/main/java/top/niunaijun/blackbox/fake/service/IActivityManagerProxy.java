@@ -232,6 +232,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             if (requireForegroundIndex != -1) {
                 requireForeground = (boolean) args[requireForegroundIndex];
             }
+
+            if (intent != null && intent.getComponent() != null && "com.google.android.gms".equals(intent.getComponent().getPackageName())) {
+                requireForeground = false;
+                Slog.d(TAG, "Preventing GMS service from being required as foreground: " + intent.getComponent().getClassName());
+            }
+
             return BlackBoxCore.getBActivityManager().startService(intent, resolvedType, requireForeground, BActivityThread.getUserId());
         }
 
