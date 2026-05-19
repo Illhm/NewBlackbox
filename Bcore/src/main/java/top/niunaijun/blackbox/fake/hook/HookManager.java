@@ -147,7 +147,7 @@ public class HookManager {
             addInjector(new AndroidIdProxy());
             addInjector(new AudioPermissionProxy());
             addInjector(new ILocationManagerProxy());
-            if (top.niunaijun.blackbox.utils.compat.BuildCompat.isT()) {
+            if (top.niunaijun.blackbox.utils.compat.BuildCompat.isTiramisu()) {
                 addInjector(new ILocaleManagerProxy());
             }
             addInjector(new IStorageManagerProxy());

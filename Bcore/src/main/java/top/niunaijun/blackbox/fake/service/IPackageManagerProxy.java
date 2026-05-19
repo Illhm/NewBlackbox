@@ -166,11 +166,14 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             packageInfo.versionName = "33.8.16-21";
             packageInfo.versionCode = 83381621;
             
-            ApplicationInfo appInfo = new ApplicationInfo();
-            appInfo.packageName = packageName;
-            appInfo.name = "com.android.vending".equals(packageName) ? "Google Play Store" : "Google Play Services";
-            appInfo.flags = ApplicationInfo.FLAG_SYSTEM;
-            appInfo.uid = 10001; 
+            ApplicationInfo appInfo = BlackBoxCore.getBPackageManager().getApplicationInfo(packageName, flags, BlackBoxCore.getUserId());
+            if (appInfo == null) {
+                appInfo = new ApplicationInfo();
+                appInfo.packageName = packageName;
+                appInfo.name = "com.android.vending".equals(packageName) ? "Google Play Store" : "Google Play Services";
+                appInfo.flags = ApplicationInfo.FLAG_SYSTEM;
+                appInfo.uid = 10001;
+            }
             packageInfo.applicationInfo = appInfo;
             
             if ((flags & android.content.pm.PackageManager.GET_SIGNATURES) != 0) {

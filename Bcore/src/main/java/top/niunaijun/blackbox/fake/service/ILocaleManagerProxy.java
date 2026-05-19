@@ -1,6 +1,8 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.os.Build;
+import android.os.IBinder;
+import android.os.IInterface;
 
 import java.lang.reflect.Method;
 
@@ -21,7 +23,14 @@ public class ILocaleManagerProxy extends BinderInvocationStub {
     @Override
     protected Object getWho() {
         android.os.IBinder locale = BRServiceManager.get().getService("locale");
-        return black.android.app.BRILocaleManagerStub.get().asInterface(locale);
+        try {
+            Class<?> stubClass = Class.forName("android.app.ILocaleManager$Stub");
+            Method asInterfaceMethod = stubClass.getMethod("asInterface", IBinder.class);
+            return asInterfaceMethod.invoke(null, locale);
+        } catch (Exception e) {
+            Slog.e(TAG, "Failed to get ILocaleManager interface", e);
+            return null;
+        }
     }
 
     @Override
