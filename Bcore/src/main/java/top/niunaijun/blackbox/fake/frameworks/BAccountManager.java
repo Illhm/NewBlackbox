@@ -71,6 +71,15 @@ public class BAccountManager extends BlackManager<IBAccountManagerService> {
         return null;
     }
 
+    public Account[] getAccounts(String type) {
+        try {
+            return getService().getAccountsAsUser(type, BActivityThread.getUserId());
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
     public Account[] getAccountsAsUser(String type) {
         try {
             return getService().getAccountsAsUser(type, BActivityThread.getUserId());
@@ -78,6 +87,14 @@ public class BAccountManager extends BlackManager<IBAccountManagerService> {
             e.printStackTrace();
         }
         return null;
+    }
+
+    public void hasFeatures(IAccountManagerResponse response, Account account, String[] features) {
+        try {
+            getService().hasFeatures(response, account, features, BActivityThread.getUserId());
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
     }
 
     public void getAccountByTypeAndFeatures(IAccountManagerResponse response, String accountType,
