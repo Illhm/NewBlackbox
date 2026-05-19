@@ -37,6 +37,7 @@ import top.niunaijun.blackbox.fake.service.IGraphicsStatsProxy;
 import top.niunaijun.blackbox.fake.service.IJobServiceProxy;
 import top.niunaijun.blackbox.fake.service.ILauncherAppsProxy;
 import top.niunaijun.blackbox.fake.service.ILocationManagerProxy;
+import top.niunaijun.blackbox.fake.service.ILocaleManagerProxy;
 import top.niunaijun.blackbox.fake.service.IMediaRouterServiceProxy;
 import top.niunaijun.blackbox.fake.service.IMediaSessionManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAudioServiceProxy;
@@ -46,7 +47,6 @@ import top.niunaijun.blackbox.fake.service.IWebViewUpdateServiceProxy;
 import top.niunaijun.blackbox.fake.service.IMiuiSecurityManagerProxy;
 import top.niunaijun.blackbox.fake.service.SystemLibraryProxy;
 import top.niunaijun.blackbox.fake.service.ReLinkerProxy;
-import top.niunaijun.blackbox.fake.service.WebViewProxy;
 import top.niunaijun.blackbox.fake.service.WebViewFactoryProxy;
 import top.niunaijun.blackbox.fake.service.MediaRecorderProxy;
 import top.niunaijun.blackbox.fake.service.AudioRecordProxy;
@@ -128,7 +128,6 @@ public class HookManager {
             addInjector(new IWebViewUpdateServiceProxy());
             addInjector(new SystemLibraryProxy());
             addInjector(new ReLinkerProxy());
-            addInjector(new WebViewProxy());
             addInjector(new WebViewFactoryProxy());
             addInjector(new WorkManagerProxy());
             addInjector(new MediaRecorderProxy());
@@ -148,6 +147,9 @@ public class HookManager {
             addInjector(new AndroidIdProxy());
             addInjector(new AudioPermissionProxy());
             addInjector(new ILocationManagerProxy());
+            if (top.niunaijun.blackbox.utils.compat.BuildCompat.isTiramisu()) {
+                addInjector(new ILocaleManagerProxy());
+            }
             addInjector(new IStorageManagerProxy());
             addInjector(new ILauncherAppsProxy());
             addInjector(new IJobServiceProxy());
@@ -294,7 +296,6 @@ public class HookManager {
         String[] criticalHooks = {
             "IActivityManagerProxy",
             "IPackageManagerProxy", 
-            "WebViewProxy",
             "IContentProviderProxy"
         };
         
