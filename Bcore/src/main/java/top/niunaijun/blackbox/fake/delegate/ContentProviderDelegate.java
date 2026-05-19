@@ -50,10 +50,14 @@ public class ContentProviderDelegate {
                 bContentProvider = new ContentProviderStub().wrapper(iInterface, BlackBoxCore.getHostPkg());
                 break;
         }
-        if (BuildCompat.isOreo()) {
-            BRContentProviderHolderOreo.get(holder)._set_provider(bContentProvider);
-        } else {
-            BRIActivityManagerContentProviderHolder.get(holder)._set_provider(bContentProvider);
+        try {
+            if (BuildCompat.isOreo()) {
+                BRContentProviderHolderOreo.get(holder)._set_provider(bContentProvider);
+            } else {
+                BRIActivityManagerContentProviderHolder.get(holder)._set_provider(bContentProvider);
+            }
+        } catch (ClassCastException e) {
+            top.niunaijun.blackbox.utils.Slog.w(TAG, "Suppressed ClassCastException for " + auth + ": " + e.getMessage());
         }
     }
 
