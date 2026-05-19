@@ -141,7 +141,11 @@ public class IAccountManagerProxy extends BinderInvocationStub {
                     return method.invoke(who, args);
                 }
             } catch (Exception e) {}
-            return BAccountManager.get().getAccountsAsUser((String) args[0]);
+            String type = null;
+            if (args != null && args.length > 0) {
+                type = (String) args[0];
+            }
+            return BAccountManager.get().getAccountsAsUser(type);
         }
     }
 

@@ -194,7 +194,7 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             appInfo.uid = 10002;
             packageInfo.applicationInfo = appInfo;
 
-            if ((flags & PackageManager.GET_SIGNATURES) != 0) {
+            if ((flags & android.content.pm.PackageManager.GET_SIGNATURES) != 0) {
                 packageInfo.signatures = new android.content.pm.Signature[] {
                     new android.content.pm.Signature("38918a453d07199354f8b19af05ec6562ced5788")
                 };
