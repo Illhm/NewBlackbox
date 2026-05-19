@@ -78,6 +78,7 @@ import top.niunaijun.blackbox.fake.service.ISystemUpdateProxy;
 import top.niunaijun.blackbox.fake.service.ITelephonyManagerProxy;
 import top.niunaijun.blackbox.fake.service.ITelephonyRegistryProxy;
 import top.niunaijun.blackbox.fake.service.IUserManagerProxy;
+import top.niunaijun.blackbox.fake.service.ICredentialManagerProxy;
 import top.niunaijun.blackbox.fake.service.IVibratorServiceProxy;
 import top.niunaijun.blackbox.fake.service.IVpnManagerProxy;
 import top.niunaijun.blackbox.fake.service.IWifiManagerProxy;
@@ -222,6 +223,10 @@ public class HookManager {
             
             if (BuildCompat.isL()) {
                 addInjector(new IJobServiceProxy());
+            }
+
+            if (BuildCompat.isU()) {
+                addInjector(new ICredentialManagerProxy());
             }
         }
         injectAll();
