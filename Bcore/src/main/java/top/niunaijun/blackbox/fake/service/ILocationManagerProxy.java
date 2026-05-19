@@ -53,11 +53,13 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         
         String packageName = BActivityThread.getAppPackageName();
         if (packageName != null && packageName.equals("com.google.android.gms")) {
-            
             if (method.getName().equals("getLastLocation") || 
                 method.getName().equals("getLastKnownLocation") ||
                 method.getName().equals("requestLocationUpdates")) {
                 Log.w(TAG, "Blocking location request from Google Play Services to prevent crash");
+                if (method.getReturnType() == int.class || method.getReturnType() == Integer.class) {
+                    return 0;
+                }
                 return null;
             }
         }
@@ -125,7 +127,7 @@ public class ILocationManagerProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             if (BLocationManager.isFakeLocationEnable()) {
-                if (args[1] instanceof IInterface) {
+                if (args.length > 1 && args[1] instanceof IInterface) {
                     IInterface listener = (IInterface) args[1];
                     BLocationManager.get().requestLocationUpdates(listener.asBinder());
                     return 0;
@@ -138,6 +140,33 @@ public class ILocationManagerProxy extends BinderInvocationStub {
             } catch (Exception e) {
                 if (e.getCause() instanceof SecurityException) {
                     Log.w(TAG, "Location permission denied for requestLocationUpdates, returning 0");
+                    return 0;
+                }
+                throw e;
+            }
+        }
+    }
+
+    @ProxyMethod("registerLocationListener")
+    public static class RegisterLocationListener extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            if (BLocationManager.isFakeLocationEnable()) {
+                for (Object arg : args) {
+                    if (arg instanceof IInterface) {
+                        IInterface listener = (IInterface) arg;
+                        BLocationManager.get().requestLocationUpdates(listener.asBinder());
+                        return 0;
+                    }
+                }
+            }
+
+            try {
+                return method.invoke(who, args);
+            } catch (Exception e) {
+                if (e.getCause() instanceof SecurityException) {
+                    Log.w(TAG, "Location permission denied for registerLocationListener, returning 0");
                     return 0;
                 }
                 throw e;

@@ -220,19 +220,43 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class StartService extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            Intent intent = (Intent) args[1];
-            String resolvedType = (String) args[2];
-            ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, BActivityThread.getUserId());
-            if (resolveInfo == null) {
-                return method.invoke(who, args);
-            }
+            try {
+                Intent intent = (Intent) args[1];
+                String resolvedType = (String) args[2];
+                ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, BActivityThread.getUserId());
+                if (resolveInfo == null) {
+                    return method.invoke(who, args);
+                }
 
-            int requireForegroundIndex = getRequireForeground();
-            boolean requireForeground = false;
-            if (requireForegroundIndex != -1) {
-                requireForeground = (boolean) args[requireForegroundIndex];
+                int requireForegroundIndex = getRequireForeground();
+                boolean requireForeground = false;
+                if (requireForegroundIndex != -1) {
+                    requireForeground = (boolean) args[requireForegroundIndex];
+                }
+
+                if (intent != null && intent.getComponent() != null) {
+                    String pkg = intent.getComponent().getPackageName();
+                    if ("com.google.android.gms".equals(pkg) || "com.google.android.gsf".equals(pkg)) {
+
+
+
+
+
+                        Slog.d(TAG, "GMS/GSF startService intercepted: " + intent.getComponent().getClassName());
+                    }
+                }
+
+                return BlackBoxCore.getBActivityManager().startService(intent, resolvedType, requireForeground, BActivityThread.getUserId());
+            } catch (Throwable e) {
+                String errorName = e.getClass().getSimpleName();
+                if (errorName.contains("BackgroundServiceStartNotAllowedException") ||
+                    errorName.contains("ForegroundServiceStartNotAllowedException")) {
+                    Slog.w(TAG, "Suppressed background service start restriction exception: " + e.getMessage());
+
+                    return new ComponentName("android", "android");
+                }
+                throw e;
             }
-            return BlackBoxCore.getBActivityManager().startService(intent, resolvedType, requireForeground, BActivityThread.getUserId());
         }
 
         public int getRequireForeground() {
