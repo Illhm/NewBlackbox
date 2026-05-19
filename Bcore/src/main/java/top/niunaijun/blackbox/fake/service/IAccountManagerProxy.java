@@ -125,15 +125,6 @@ public class IAccountManagerProxy extends BinderInvocationStub {
         }
     }
 
-    @ProxyMethod("getAccounts")
-    public static class getAccounts extends MethodHook {
-
-        @Override
-        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            return BAccountManager.get().getAccounts((String) args[0]);
-        }
-    }
-
     @ProxyMethod("getAccountsAsUser")
     public static class getAccountsAsUser extends MethodHook {
 

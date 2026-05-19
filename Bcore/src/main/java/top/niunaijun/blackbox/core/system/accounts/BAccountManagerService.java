@@ -348,9 +348,12 @@ public class BAccountManagerService extends IBAccountManagerService.Stub impleme
             onResult(response, result);
             return;
         }
-        new HasFeaturesSession(userAccounts, response, account, features).bind();
+        new HasFeaturesSession(
+                userAccounts,
+                response,
+                account,
+                features).bind();
     }
-
 
     @Override
     public boolean addAccountExplicitly(Account account, String password, Bundle extras, int userId) throws RemoteException {

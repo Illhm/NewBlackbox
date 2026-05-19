@@ -71,15 +71,6 @@ public class BAccountManager extends BlackManager<IBAccountManagerService> {
         return null;
     }
 
-    public Account[] getAccounts(String type) {
-        try {
-            return getService().getAccountsAsUser(type, BActivityThread.getUserId());
-        } catch (RemoteException e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
-
     public Account[] getAccountsAsUser(String type) {
         try {
             return getService().getAccountsAsUser(type, BActivityThread.getUserId());
