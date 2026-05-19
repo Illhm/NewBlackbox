@@ -120,6 +120,27 @@ public class IAccountManagerProxy extends BinderInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                if ("com.android.vending".equals(top.niunaijun.blackbox.app.BActivityThread.getAppPackageName()) ||
+                    "com.google.android.gms".equals(top.niunaijun.blackbox.app.BActivityThread.getAppPackageName())) {
+                    return method.invoke(who, args);
+                }
+            } catch (Exception e) {}
+            return BAccountManager.get().getAccountsAsUser((String) args[0]);
+        }
+    }
+
+    @ProxyMethod("getAccounts")
+    public static class getAccounts extends MethodHook {
+
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                if ("com.android.vending".equals(top.niunaijun.blackbox.app.BActivityThread.getAppPackageName()) ||
+                    "com.google.android.gms".equals(top.niunaijun.blackbox.app.BActivityThread.getAppPackageName())) {
+                    return method.invoke(who, args);
+                }
+            } catch (Exception e) {}
             return BAccountManager.get().getAccountsAsUser((String) args[0]);
         }
     }
@@ -251,6 +272,18 @@ public class IAccountManagerProxy extends BinderInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                if ("com.android.vending".equals(top.niunaijun.blackbox.app.BActivityThread.getAppPackageName())) {
+
+
+                    android.content.Intent intent = new android.content.Intent("android.settings.ADD_ACCOUNT_SETTINGS");
+                    intent.setPackage("com.google.android.gms");
+                    intent.putExtra("account_types", new String[]{"com.google"});
+                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                    top.niunaijun.blackbox.BlackBoxCore.getContext().startActivity(intent);
+                    return 0;
+                }
+            } catch (Exception e) {}
             BAccountManager.get().addAccount((IAccountManagerResponse) args[0],
                     (String) args[1],
                     (String) args[2],

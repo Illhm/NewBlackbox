@@ -37,6 +37,10 @@ public class ActivityManagerCommonProxy {
             Slog.d(TAG, "Hook in : " + intent);
             assert intent != null;
             
+            if (intent.getAction() != null && intent.getAction().equals("com.google.android.gms.auth.login.LOGIN") && "com.android.vending".equals(BActivityThread.getAppPackageName())) {
+                intent.setComponent(new ComponentName("com.google.android.gms", "com.google.android.gms.auth.u.login.AccountLoginActivity"));
+            }
+
             
             if (intent.getParcelableExtra("_B_|_target_") != null) {
                 return method.invoke(who, args);
