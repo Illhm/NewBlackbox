@@ -92,4 +92,3 @@ dependencies {
 
     
 }
-apply from: 'download_gapps.gradle'

@@ -46,7 +46,6 @@ import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.core.system.user.BUserInfo;
 import top.niunaijun.blackbox.entity.pm.InstallOption;
 import top.niunaijun.blackbox.entity.pm.InstallResult;
-import top.niunaijun.blackbox.core.GmsPreloadManager;
 
 import top.niunaijun.blackbox.fake.delegate.ContentProviderDelegate;
 import top.niunaijun.blackbox.fake.frameworks.BActivityManager;
@@ -1001,10 +1000,6 @@ public class BlackBoxCore extends ClientConfiguration {
             long totalTime = System.currentTimeMillis() - startTime;
             Slog.d(TAG, "BlackBox initialization completed in " + totalTime + "ms");
             
-            if (isServerProcess()) {
-                GmsPreloadManager.init(0);
-            }
-
         } catch (Exception e) {
             long totalTime = System.currentTimeMillis() - startTime;
             Slog.e(TAG, "BlackBox initialization failed after " + totalTime + "ms", e);
@@ -1227,6 +1222,15 @@ public class BlackBoxCore extends ClientConfiguration {
 
     public boolean isInstallGms(int userId) {
         return GmsCore.isInstalledGoogleService(userId);
+    }
+
+    public InstallResult installGms(int userId) {
+        return GmsCore.installGApps(userId);
+    }
+
+    public boolean uninstallGms(int userId) {
+        GmsCore.uninstallGApps(userId);
+        return !GmsCore.isInstalledGoogleService(userId);
     }
 
     
