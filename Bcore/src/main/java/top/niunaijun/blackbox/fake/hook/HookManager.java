@@ -12,7 +12,6 @@ import top.niunaijun.blackbox.fake.service.HCallbackProxy;
 import top.niunaijun.blackbox.fake.service.IAccessibilityManagerProxy;
 import top.niunaijun.blackbox.fake.service.IAccountManagerProxy;
 import top.niunaijun.blackbox.fake.service.ICredentialManagerProxy;
-import top.niunaijun.blackbox.fake.service.ICredentialManagerProxy;
 import top.niunaijun.blackbox.fake.service.IActivityClientProxy;
 import top.niunaijun.blackbox.fake.service.IActivityManagerProxy;
 import top.niunaijun.blackbox.fake.service.IActivityTaskManagerProxy;
@@ -80,6 +79,8 @@ import top.niunaijun.blackbox.fake.service.ISystemUpdateProxy;
 import top.niunaijun.blackbox.fake.service.ITelephonyManagerProxy;
 import top.niunaijun.blackbox.fake.service.ITelephonyRegistryProxy;
 import top.niunaijun.blackbox.fake.service.IUserManagerProxy;
+import top.niunaijun.blackbox.fake.service.ILocaleManagerProxy;
+import android.os.Build;
 import top.niunaijun.blackbox.fake.service.IVibratorServiceProxy;
 import top.niunaijun.blackbox.fake.service.IVpnManagerProxy;
 import top.niunaijun.blackbox.fake.service.IWifiManagerProxy;
@@ -118,6 +119,9 @@ public class HookManager {
             addInjector(new IAppOpsManagerProxy());
             addInjector(new INotificationManagerProxy());
             addInjector(new IAlarmManagerProxy());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            addInjector(new ILocaleManagerProxy());
+        }
             addInjector(new IAppWidgetManagerProxy());
             addInjector(new ContentServiceStub());
             addInjector(new IWindowManagerProxy());
