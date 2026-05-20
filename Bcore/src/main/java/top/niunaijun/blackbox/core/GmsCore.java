@@ -56,7 +56,7 @@ public class GmsCore {
             try {
                 BlackBoxCore.getContext().getPackageManager().getApplicationInfo(packageName, 0);
             } catch (PackageManager.NameNotFoundException e) {
-                
+
                 continue;
             }
             InstallResult installResult = blackBoxCore.installPackageAsUser(packageName, userId);
