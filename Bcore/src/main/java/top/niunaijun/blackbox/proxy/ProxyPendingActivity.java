@@ -24,8 +24,16 @@ public class ProxyPendingActivity extends Activity {
         if (pendingActivityRecord.mTarget == null)
             return;
         pendingActivityRecord.mTarget.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        pendingActivityRecord.mTarget.setFlags(pendingActivityRecord.mTarget.getFlags() & ~Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        pendingActivityRecord.mTarget.setFlags(pendingActivityRecord.mTarget.getFlags() & ~Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
         pendingActivityRecord.mTarget.setExtrasClassLoader(BlackBoxCore.getApplication().getClassLoader());
-        startActivity(pendingActivityRecord.mTarget);
+        try {
+            startActivity(pendingActivityRecord.mTarget);
+        } catch (SecurityException e) {
+            e.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     public static class P0 extends ProxyPendingActivity {

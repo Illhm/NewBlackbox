@@ -37,6 +37,18 @@ public class ActivityManagerCommonProxy {
             Slog.d(TAG, "Hook in : " + intent);
             assert intent != null;
 
+            if ("com.android.vending".equals(intent.getPackage())) {
+                Intent cleanIntent = new Intent(intent.getAction(), intent.getData());
+                cleanIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                for (int i = 0; i < args.length; i++) {
+                    if (args[i] == intent) {
+                        args[i] = cleanIntent;
+                        break;
+                    }
+                }
+                intent = cleanIntent;
+            }
+
             if (maybeRouteSandboxAccountPicker(intent)) {
                 return method.invoke(who, args);
             }
