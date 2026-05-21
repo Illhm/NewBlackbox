@@ -81,6 +81,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         return "com.android.vending".equals(pkg);
     }
 
+#<<<<<<< codex/fix-array-null-pointer-exceptions-6gx866
     private static boolean shouldForceVirtualProvider(String authority) {
         if (authority == null) {
             return false;
@@ -91,6 +92,8 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 || authority.startsWith("com.google.android.webview")
                 || authority.startsWith("com.google.android.trichromelibrary");
     }
+#=======
+#>>>>>>> main
 
     public static final String TAG = "ActivityManagerStub";
 
