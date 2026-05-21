@@ -64,6 +64,34 @@ import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 
 @ScanClass(ActivityManagerCommonProxy.class)
 public class IActivityManagerProxy extends ClassInvocationStub {
+
+    private static boolean shouldBypassPendingProxy(Intent intent) {
+        if (intent == null) {
+            return true;
+        }
+        String data = intent.getDataString();
+        if (data != null && data.startsWith("market://")) {
+            return true;
+        }
+        ComponentName component = intent.getComponent();
+        if (component != null && "com.android.vending".equals(component.getPackageName())) {
+            return true;
+        }
+        String pkg = intent.getPackage();
+        return "com.android.vending".equals(pkg);
+    }
+
+    private static boolean shouldForceVirtualProvider(String authority) {
+        if (authority == null) {
+            return false;
+        }
+        return authority.startsWith("com.android.vending")
+                || authority.startsWith("com.google.android.gms")
+                || authority.startsWith("com.google.android.gsf")
+                || authority.startsWith("com.google.android.webview")
+                || authority.startsWith("com.google.android.trichromelibrary");
+    }
+
     public static final String TAG = "ActivityManagerStub";
 
     @Override
@@ -157,6 +185,8 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                         || authStr.equals("com.hihonor.android.launcher.settings");
                 boolean sandboxHasGms = isGmsAuth
                         && BlackBoxCore.get().isInstallGms(userId);
+                boolean forceVirtualProvider = shouldForceVirtualProvider(authStr)
+                        && sandboxHasGms;
 
                 if (isSystemAuth || (isGmsAuth && !sandboxHasGms)) {
                     content = method.invoke(who, args);
@@ -167,6 +197,11 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 ProviderInfo providerInfo = BlackBoxCore.getBPackageManager()
                         .resolveContentProvider(authStr, GET_META_DATA, userId);
                 if (providerInfo == null) {
+                    if (forceVirtualProvider) {
+                        Slog.w(TAG, "Force-virtual provider not declared in sandbox: " + authStr
+                                + " user=" + userId + ", blocking host fallback.");
+                        return null;
+                    }
                     if (isGmsAuth) {
                         Slog.w(TAG, "Sandbox GMS does not declare provider " + authStr
                                 + " for user " + userId + ", falling back to host.");
@@ -192,6 +227,11 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     args[getUserIndex()] = BlackBoxCore.getHostUserId();
                 }
                 if (providerBinder == null) {
+                    if (forceVirtualProvider) {
+                        Slog.w(TAG, "Force-virtual provider bind failed: " + authStr
+                                + " user=" + userId + ", blocking host fallback.");
+                        return null;
+                    }
                     if (isGmsAuth) {
                         Slog.w(TAG, "Sandbox GMS provider " + authStr
                                 + " could not be bound for user " + userId
@@ -525,6 +565,9 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 Intent intent = intents[i];
                 switch (type) {
                     case ActivityManagerCompat.INTENT_SENDER_ACTIVITY:
+                        if (shouldBypassPendingProxy(intent)) {
+                            break;
+                        }
                         Intent shadow = new Intent();
                         shadow.setComponent(new ComponentName(BlackBoxCore.getHostPkg(), ProxyManifest.getProxyPendingActivity(BActivityThread.getAppPid())));
                         ProxyPendingRecord.saveStub(shadow, intent, BActivityThread.getUserId());
