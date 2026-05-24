@@ -1279,55 +1279,68 @@ public class BlackBoxCore extends ClientConfiguration {
 
     private void startLogcat() {
         new Thread(() -> {
-            File logFile = null;
             Context context = getContext();
-            String fileName = context.getPackageName() + "_logcat.txt";
-            boolean useMediaStore = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q;
-            
-            
             logDeviceInfo();
-            
             try {
-                if (useMediaStore) {
-                    
-                    android.content.ContentValues values = new android.content.ContentValues();
-                    values.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, fileName);
-                    values.put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/plain");
-                    values.put(android.provider.MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/logs");
-                    android.net.Uri uri = context.getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                    if (uri != null) {
-                        try (java.io.OutputStream out = context.getContentResolver().openOutputStream(uri)) {
-                            
-                            ShellUtils.execCommand("logcat -c", false);
-                            java.lang.Process process = Runtime.getRuntime().exec("logcat");
-                            try (java.io.InputStream in = process.getInputStream()) {
-                                byte[] buffer = new byte[4096];
-                                int len;
-                                while ((len = in.read(buffer)) != -1) {
-                                    out.write(buffer, 0, len);
-                                }
-                            }
-                        }
-                    }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    saveLogcatToMediaStoreWithRetry(context);
                 } else {
-                    
-                    File docuentsdir = new File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "logs");
-                    if (!docuentsdir.exists()) {
-                        docuentsdir.mkdirs();
+                    File logsDir = new File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "logs");
+                    if (!logsDir.exists() && !logsDir.mkdirs()) {
+                        throw new IllegalStateException("Unable to create logs dir: " + logsDir.getAbsolutePath());
                     }
-                    logFile = new File(docuentsdir, fileName);
-                    FileUtils.deleteDir(logFile);
+                    String fileName = buildLogcatFileName();
+                    File logFile = new File(logsDir, fileName);
                     ShellUtils.execCommand("logcat -c", false);
                     ShellUtils.execCommand("logcat -f " + logFile.getAbsolutePath(), false);
                 }
             } catch (Exception e) {
-                Slog.e(TAG, "Failed to save logcat: " + e.getMessage());
+                Slog.e(TAG, "Failed to save logcat", e);
             }
         }).start();
     }
 
-    
+    private String buildLogcatFileName() {
+        java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US);
+        return getContext().getPackageName() + "_logcat_" + fmt.format(new java.util.Date()) + ".txt";
+    }
+
+    private void saveLogcatToMediaStoreWithRetry(Context context) throws Exception {
+        for (int attempt = 0; attempt < 5; attempt++) {
+            String fileName = buildLogcatFileName();
+            android.content.ContentValues values = new android.content.ContentValues();
+            values.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, fileName);
+            values.put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/plain");
+            values.put(android.provider.MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/logs");
+            values.put(android.provider.MediaStore.Downloads.IS_PENDING, 1);
+            android.net.Uri uri = null;
+            try {
+                uri = context.getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (uri == null) throw new IllegalStateException("MediaStore insert returned null");
+                try (java.io.OutputStream out = context.getContentResolver().openOutputStream(uri)) {
+                    if (out == null) throw new IllegalStateException("Unable to open output stream");
+                    ShellUtils.execCommand("logcat -c", false);
+                    java.lang.Process process = Runtime.getRuntime().exec("logcat -d -v threadtime");
+                    try (java.io.InputStream in = process.getInputStream()) {
+                        byte[] buffer = new byte[4096];
+                        int len;
+                        while ((len = in.read(buffer)) != -1) out.write(buffer, 0, len);
+                    }
+                }
+                android.content.ContentValues done = new android.content.ContentValues();
+                done.put(android.provider.MediaStore.Downloads.IS_PENDING, 0);
+                context.getContentResolver().update(uri, done, null, null);
+                return;
+            } catch (IllegalStateException ise) {
+                if (uri != null) context.getContentResolver().delete(uri, null, null);
+                if (attempt == 4) throw ise;
+                try { Thread.sleep(120L); } catch (InterruptedException ignored) {}
+            }
+        }
+    }
+
     private void logDeviceInfo() {
+
         try {
             Slog.i(TAG, "╔══════════════════════════════════════════════════════════════╗");
             Slog.i(TAG, "║                    DEVICE INFORMATION                        ║");
@@ -1630,21 +1643,6 @@ public class BlackBoxCore extends ClientConfiguration {
     
     
 
-    private void bypassHiddenApiRestrictions() {
-        try {
-            Class<?> vmRuntimeClass = Class.forName("dalvik.system.VMRuntime");
-            Method getRuntime = vmRuntimeClass.getDeclaredMethod("getRuntime");
-            Method setHiddenApiExemptions = vmRuntimeClass.getDeclaredMethod("setHiddenApiExemptions", String[].class);
-            getRuntime.setAccessible(true);
-            setHiddenApiExemptions.setAccessible(true);
-            Object runtime = getRuntime.invoke(null);
-            setHiddenApiExemptions.invoke(runtime, (Object) new String[]{"L"});
-            Slog.d(TAG, "Hidden API exemptions applied via VMRuntime");
-        } catch (Throwable e) {
-            Slog.w(TAG, "VMRuntime hidden API bypass failed", e);
-        }
-    }
-
     public static void installSystemHooks() {
         try {
             SimpleCrashFix.installSimpleFix();
@@ -1660,14 +1658,10 @@ public class BlackBoxCore extends ClientConfiguration {
             throw new IllegalArgumentException("ClientConfiguration is null!");
         }
 
-        boolean hiddenApiDisabled = NativeCore.disableHiddenApi();
-        bypassHiddenApiRestrictions();
-        if(!hiddenApiDisabled){
-            try {
-                Reflection.unseal(context);
-            } catch (Throwable t) {
-                Slog.w(TAG, "Reflection.unseal failed: " + t.getMessage());
-            }
+        try {
+            NativeCore.disableHiddenApi();
+        } catch (Throwable t) {
+            Slog.w(TAG, "Native hidden API initialization failed", t);
         }
 
         try {

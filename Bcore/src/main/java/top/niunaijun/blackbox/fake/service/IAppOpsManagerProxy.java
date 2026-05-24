@@ -53,6 +53,24 @@ public class IAppOpsManagerProxy extends BinderInvocationStub {
         return false;
     }
 
+
+    private static String resolveCallingPackageForUid(Context context, int uid) {
+        if (uid <= 0 || context == null) return null;
+        try {
+            String[] packages = context.getPackageManager().getPackagesForUid(uid);
+            if (packages == null || packages.length == 0) return null;
+            for (String pkg : packages) {
+                if (BlackBoxCore.getHostPkg().equals(pkg)) {
+                    return pkg;
+                }
+            }
+            return packages[0];
+        } catch (Throwable e) {
+            Slog.w(TAG, "resolveCallingPackageForUid failed for uid=" + uid, e);
+            return null;
+        }
+    }
+
     private static void maybeFixHostPackageUid(Object[] args, String methodName) {
         if (args == null || args.length == 0) return;
 
@@ -70,6 +88,12 @@ public class IAppOpsManagerProxy extends BinderInvocationStub {
         if (uidIndex < 0) return;
 
         int uid = (Integer) args[uidIndex];
+        String resolvedPkg = resolveCallingPackageForUid(BlackBoxCore.getContext(), uid);
+        if (resolvedPkg != null && !BlackBoxCore.getHostPkg().equals(resolvedPkg)) {
+            args[hostPkgIndex] = resolvedPkg;
+            Slog.w(TAG, "AppOps package mismatch in " + methodName + ", replacing host package with " + resolvedPkg + " for uid=" + uid);
+            return;
+        }
         if (uid > 0 && uid != hostUid) {
             args[uidIndex] = hostUid;
             Slog.d(TAG, "Fixed AppOps uid mismatch in " + methodName + " at index " + uidIndex + ": " + uid + " -> " + hostUid);
