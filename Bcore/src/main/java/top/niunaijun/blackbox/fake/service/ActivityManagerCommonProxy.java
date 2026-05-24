@@ -191,6 +191,65 @@ public class ActivityManagerCommonProxy {
             return null;
         }
 
+        private String findCallingPackageArg(Object[] args) {
+            if (args == null) {
+                return null;
+            }
+            for (Object arg : args) {
+                if (!(arg instanceof String)) continue;
+                String value = (String) arg;
+                if (value == null) continue;
+                if (value.equals(BlackBoxCore.getHostPkg())
+                        || value.equals(BActivityThread.getAppPackageName())
+                        || value.startsWith("com.google.android.")) {
+                    return value;
+                }
+            }
+            return null;
+        }
+
+        private void rewriteCallingPackageArg(Object[] args, String virtualPkg) {
+            if (args == null || virtualPkg == null || virtualPkg.isEmpty()) {
+                return;
+            }
+            for (int i = 0; i < args.length; i++) {
+                Object arg = args[i];
+                if (!(arg instanceof String)) continue;
+                String value = (String) arg;
+                if (BlackBoxCore.getHostPkg().equals(value)) {
+                    args[i] = virtualPkg;
+                    return;
+                }
+            }
+        }
+
+        private void rewriteGoogleAuthExtras(Intent intent, String virtualPkg) {
+            if (intent == null || virtualPkg == null || virtualPkg.isEmpty()) {
+                return;
+            }
+            Bundle extras = intent.getExtras();
+            if (extras == null || extras.isEmpty()) {
+                return;
+            }
+            String[] keys = new String[]{
+                    "androidPackageName",
+                    "clientPackageName",
+                    "callingPackage",
+                    "realClientPackageName",
+                    "serviceId",
+                    "appPackageName"
+            };
+            for (String key : keys) {
+                Object value = extras.get(key);
+                if (value instanceof String && BlackBoxCore.getHostPkg().equals(value)) {
+                    extras.putString(key, virtualPkg);
+                    Slog.i(TAG, "GoogleAuthRoute: rewritten AccountPicker caller from "
+                            + BlackBoxCore.getHostPkg() + " to " + virtualPkg);
+                }
+            }
+            intent.replaceExtras(extras);
+        }
+
         /**
          * Detect Android's system ChooseTypeAndAccountActivity / ChooseAccountActivity and
          * redirect to a sandbox-aware picker so callers see accounts from BAccountManagerService
