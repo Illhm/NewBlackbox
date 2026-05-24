@@ -1,6 +1,7 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.content.Context;
+import android.os.Binder;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.RemoteException;
@@ -21,18 +22,30 @@ public class GmsProxy extends BinderInvocationStub {
     public static final String TAG = "GmsProxy";
     private static final Object BINDER_LOCK = new Object();
     private static volatile IBinder sCachedBinder;
+    private static volatile Object sLazyProxy;
+    private static final IBinder sLazyBinder = new Binder();
 
     public GmsProxy() {
-        super(BRServiceManager.get().getService("gms"));
+        super(BRServiceManager.get().getService("gms") != null ? BRServiceManager.get().getService("gms") : new Binder());
     }
 
     @Override
     protected Object getWho() {
+        Object real = resolveRealBroker();
+        if (real != null) {
+            return real;
+        }
+        return createLazyProxy();
+    }
+
+    private Object resolveRealBroker() {
         IBinder binder;
         synchronized (BINDER_LOCK) {
             binder = sCachedBinder;
             if (binder != null && binder.isBinderAlive()) {
-                return toBrokerInterface(binder);
+                Object iface = toBrokerInterface(binder);
+                Slog.i(TAG, "GmsProxy: real broker resolved=" + (iface != null));
+                return iface;
             }
             if (binder != null && !binder.isBinderAlive()) {
                 Slog.w(TAG, "GmsProxy: binder died, clearing cache");
@@ -55,13 +68,8 @@ public class GmsProxy extends BinderInvocationStub {
         }
         if (fetched == null) {
             Slog.i(TAG, "GmsProxy: lazy mode, gms process not running yet");
-            Slog.e(TAG, "GmsProxy: failed after retries: reason=binder_null");
-            Slog.e(TAG, "GmsProxy: state gmsInstalled=" + BlackBoxCore.get().isInstalled("com.google.android.gms", BlackBoxCore.getUserId())
-                    + " gsfInstalled=" + BlackBoxCore.get().isInstalled("com.google.android.gsf", BlackBoxCore.getUserId())
-                    + " vendingInstalled=" + BlackBoxCore.get().isInstalled("com.android.vending", BlackBoxCore.getUserId())
-                    + " gmsProcessRunning=" + (BlackBoxCore.getAppProcessName()!=null && BlackBoxCore.getAppProcessName().contains("com.google.android.gms"))
-                    + " binderReady=false");
-            return createLazyProxy();
+            Slog.i(TAG, "GmsProxy: real broker resolved=false");
+            return null;
         }
         try {
             fetched.linkToDeath(() -> {
@@ -75,7 +83,9 @@ public class GmsProxy extends BinderInvocationStub {
         synchronized (BINDER_LOCK) {
             sCachedBinder = fetched;
         }
-        return toBrokerInterface(fetched);
+        Object iface = toBrokerInterface(fetched);
+        Slog.i(TAG, "GmsProxy: real broker resolved=" + (iface != null));
+        return iface;
     }
 
     private Object toBrokerInterface(IBinder binder) {
@@ -96,17 +106,24 @@ public class GmsProxy extends BinderInvocationStub {
 
 
     private Object createLazyProxy() {
+        if (sLazyProxy != null) return sLazyProxy;
         try {
             Class<?> ifaceClass = Class.forName("com.google.android.gms.common.api.internal.IGmsServiceBroker");
-            Object proxy = Proxy.newProxyInstance(ifaceClass.getClassLoader(), new Class[]{ifaceClass}, (obj, method, args) -> {
+            Object proxy = Proxy.newProxyInstance(ifaceClass.getClassLoader(), new Class[]{ifaceClass, android.os.IInterface.class}, (obj, method, args) -> {
+                if ("asBinder".equals(method.getName())) {
+                    return sLazyBinder;
+                }
                 Slog.i(TAG, "GmsProxy: resolving real binder on method=" + method.getName());
-                Object real = getWho();
-                if (real == null || real == obj) {
+                Object real = resolveRealBroker();
+                if (real == null) {
                     throw new IllegalStateException("gms binder unresolved in lazy proxy");
                 }
                 return method.invoke(real, args);
             });
+            sLazyProxy = proxy;
             Slog.i(TAG, "GmsProxy: installed lazy proxy binder");
+            Slog.i(TAG, "GmsProxy: lazy proxy type=" + proxy.getClass().getName());
+            Slog.i(TAG, "GmsProxy: lazy proxy asBinder available=" + (((android.os.IInterface) proxy).asBinder() != null));
             return proxy;
         } catch (Throwable e) {
             Slog.e(TAG, "GmsProxy: failed to install lazy proxy binder", e);
