@@ -308,4 +308,17 @@ public class ActivityManagerCommonProxy {
             return resolveVirtualCallingPackage(token);
         }
     }
+
+    @ProxyMethod("getLaunchedFromUid")
+    public static class getLaunchedFromUid extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int uid = BActivityThread.getUid();
+            if (uid <= 0) {
+                uid = BActivityThread.getBUid();
+            }
+            return uid;
+        }
+    }
+
 }
