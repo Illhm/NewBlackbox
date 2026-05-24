@@ -1,0 +1,57 @@
+--- Bcore/src/main/java/top/niunaijun/blackbox/fake/service/IActivityManagerProxy.java
++++ Bcore/src/main/java/top/niunaijun/blackbox/fake/service/IActivityManagerProxy.java
+@@ -192,7 +192,7 @@
+                         && sandboxHasGms;
+
+                 if (isSystemAuth || (isGmsAuth && !sandboxHasGms)) {
+-                    content = method.invoke(who, args);
++                    content = safeInvoke(method, who, args, authStr);
+                     ContentProviderDelegate.update(content, authStr);
+                     return content;
+                 }
+@@ -208,7 +208,7 @@
+                     if (isGmsAuth) {
+                         Slog.w(TAG, "Sandbox GMS does not declare provider " + authStr
+                                 + " for user " + userId + ", falling back to host.");
+-                        content = method.invoke(who, args);
++                        content = safeInvoke(method, who, args, authStr);
+                         ContentProviderDelegate.update(content, authStr);
+                         return content;
+                     }
+@@ -241,14 +241,14 @@
+                                 + ", falling back to host.");
+                         args[authIndex] = authStr;
+                         args[getUserIndex()] = userId;
+-                        content = method.invoke(who, args);
++                        content = safeInvoke(method, who, args, authStr);
+                         ContentProviderDelegate.update(content, authStr);
+                         return content;
+                     }
+                     return null;
+                 }
+
+-                content = method.invoke(who, args);
++                content = safeInvoke(method, who, args, authStr);
+                 Reflector.with(content).field("info").set(providerInfo);
+                 Reflector.with(content)
+                         .field("provider")
+@@ -262,6 +262,19 @@
+             return method.invoke(who, args);
+         }
+
++        private Object safeInvoke(Method method, Object who, Object[] args, String authStr) throws Throwable {
++            try {
++                return method.invoke(who, args);
++            } catch (java.lang.reflect.InvocationTargetException e) {
++                if (e.getCause() instanceof SecurityException) {
++                    Slog.w(TAG, "SecurityException when fetching provider: " + authStr + " (" + e.getCause().getMessage() + "), returning null");
++                    return null;
++                }
++                throw e;
++            } catch (SecurityException e) {
++                Slog.w(TAG, "SecurityException when fetching provider: " + authStr + " (" + e.getMessage() + "), returning null");
++                return null;
++            }
++        }
++
+         protected int getAuthIndex() {
