@@ -28,6 +28,21 @@ import static android.content.pm.PackageManager.GET_META_DATA;
 public class ActivityManagerCommonProxy {
     public static final String TAG = "CommonStub";
 
+    private static String resolveVirtualCallingPackage(IBinder token) {
+        String packageName = null;
+        try {
+            if (token != null) {
+                packageName = BlackBoxCore.getBActivityManager().getCallingPackage(token, BActivityThread.getUserId());
+            }
+        } catch (Throwable ignored) {
+        }
+        if (packageName == null || packageName.length() == 0 || BlackBoxCore.getHostPkg().equals(packageName)) {
+            packageName = BActivityThread.getAppPackageName();
+        }
+        return packageName;
+    }
+
+
     @ProxyMethod("startActivity")
     public static class StartActivity extends MethodHook {
         @Override
@@ -269,7 +284,7 @@ public class ActivityManagerCommonProxy {
     public static class getCallingPackage extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            return BlackBoxCore.getBActivityManager().getCallingPackage((IBinder) args[0], BActivityThread.getUserId());
+            return resolveVirtualCallingPackage((IBinder) args[0]);
         }
     }
 
@@ -277,7 +292,20 @@ public class ActivityManagerCommonProxy {
     public static class getCallingActivity extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            return BlackBoxCore.getBActivityManager().getCallingActivity((IBinder) args[0], BActivityThread.getUserId());
+            ComponentName calling = BlackBoxCore.getBActivityManager().getCallingActivity((IBinder) args[0], BActivityThread.getUserId());
+            if (calling == null || BlackBoxCore.getHostPkg().equals(calling.getPackageName())) {
+                return new ComponentName(BActivityThread.getAppPackageName(), BActivityThread.getAppPackageName());
+            }
+            return calling;
+        }
+    }
+
+    @ProxyMethod("getLaunchedFromPackage")
+    public static class getLaunchedFromPackage extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            IBinder token = args != null && args.length > 0 && args[0] instanceof IBinder ? (IBinder) args[0] : null;
+            return resolveVirtualCallingPackage(token);
         }
     }
 }
