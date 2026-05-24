@@ -9,12 +9,14 @@ import android.os.IBinder;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.entity.ServiceRecord;
 import top.niunaijun.blackbox.entity.UnbindRecord;
 import top.niunaijun.blackbox.proxy.record.ProxyServiceRecord;
+import top.niunaijun.blackbox.utils.Slog;
 
 import static android.app.Service.START_NOT_STICKY;
 
@@ -26,6 +28,7 @@ public class AppServiceDispatcher {
     private static final AppServiceDispatcher sServiceDispatcher = new AppServiceDispatcher();
 
     private Map<Intent.FilterComparison, ServiceRecord> mService = new HashMap<>();
+    private final Map<String, IBinder> mBoundByRequestId = new ConcurrentHashMap<>();
 
     public static AppServiceDispatcher get() {
         return sServiceDispatcher;
@@ -34,12 +37,19 @@ public class AppServiceDispatcher {
     private final Handler mHandler = BlackBoxCore.get().getHandler();
 
     public IBinder onBind(Intent proxyIntent) {
+        String requestId = proxyIntent != null ? proxyIntent.getStringExtra("blackbox.proxy.request_id") : null;
+        if (requestId != null && mBoundByRequestId.containsKey(requestId)) {
+            Slog.w("AppServiceDispatcher", "actionTaken=RETURN_CACHED_BINDER requestId=" + requestId);
+            return mBoundByRequestId.get(requestId);
+        }
         ProxyServiceRecord serviceRecord = ProxyServiceRecord.create(proxyIntent);
         Intent intent = serviceRecord.mServiceIntent;
         ServiceInfo serviceInfo = serviceRecord.mServiceInfo;
 
-        if (intent == null || serviceInfo == null)
+        if (intent == null || serviceInfo == null) {
+            Slog.w("AppServiceDispatcher", "actionTaken=UNSUPPORTED requestId=" + requestId + " reason=missing_target_or_info");
             return null;
+        }
 
 
 
@@ -61,6 +71,9 @@ public class AppServiceDispatcher {
         try {
             IBinder iBinder = service.onBind(intent);
             record.addBinder(intent, iBinder);
+            if (requestId != null && iBinder != null) {
+                mBoundByRequestId.put(requestId, iBinder);
+            }
             return iBinder;
         } catch (Throwable e) {
             e.printStackTrace();

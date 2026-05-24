@@ -55,6 +55,10 @@ import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.ParceledListSliceCompat;
 import top.niunaijun.blackbox.utils.compat.TaskDescriptionCompat;
 import top.niunaijun.blackbox.utils.Slog;
+import top.niunaijun.blackbox.utils.IntentSanitizer;
+import top.niunaijun.blackbox.utils.GmsCompatibilityLayer;
+import top.niunaijun.blackbox.utils.ProxyIntentGuard;
+import top.niunaijun.blackbox.utils.ServiceBindLoopGuard;
 
 import static android.content.Context.RECEIVER_EXPORTED;
 import static android.content.Context.RECEIVER_NOT_EXPORTED;
@@ -437,8 +441,19 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             Intent intent = (Intent) args[2];
             String resolvedType = (String) args[3];
             IServiceConnection connection = (IServiceConnection) args[4];
+            String requestId = intent != null ? ProxyIntentGuard.ensureRequestId(intent) : "null";
 
             
+            if (intent != null && ProxyIntentGuard.isSelfProxyTarget(intent, BlackBoxCore.getHostPkg())) {
+                Slog.w("ServiceBindGuard", "actionTaken=BYPASS_ALREADY_PROXIED requestId=" + requestId + " target=" + intent.getComponent());
+                return method.invoke(who, args);
+            }
+            if (intent != null) {
+                boolean trustedGms = GmsCompatibilityLayer.isGmsRelatedPackage(intent.getPackage())
+                        || (intent.getComponent() != null && GmsCompatibilityLayer.isGmsRelatedPackage(intent.getComponent().getPackageName()));
+                intent = IntentSanitizer.sanitize(intent, trustedGms);
+                args[2] = intent;
+            }
             if (intent == null) {
                 Slog.w(TAG, "BindServiceCommon: Intent is null, proceeding with original call");
                 return method.invoke(who, args);
@@ -448,6 +463,9 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
             int userId = intent.getIntExtra("_B_|_UserId", -1);
             userId = userId == -1 ? BActivityThread.getUserId() : userId;
+            if (ServiceBindLoopGuard.isDuplicate(intent, BActivityThread.getAppPackageName(), android.os.Process.myUid(), userId, requestId)) {
+                return null;
+            }
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, userId);
             if (resolveInfo != null || AppSystemEnv.isOpenPackage(intent.getComponent())) {
                 Intent proxyIntent = BlackBoxCore.getBActivityManager().bindService(intent,

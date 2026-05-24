@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.IBinder;
 
+import top.niunaijun.blackbox.utils.ServiceIntentRegistry;
 import top.niunaijun.blackbox.utils.compat.BundleCompat;
 
 
@@ -23,14 +24,24 @@ public class ProxyServiceRecord {
     }
 
     public static void saveStub(Intent shadow, Intent target, ServiceInfo serviceInfo, IBinder token, int userId, int startId) {
-        shadow.putExtra("_B_|_target_", target);
-        shadow.putExtra("_B_|_service_info_", serviceInfo);
+        String requestId = shadow.getStringExtra("blackbox.proxy.request_id");
+        if (requestId == null) {
+            requestId = java.util.UUID.randomUUID().toString();
+            shadow.putExtra("blackbox.proxy.request_id", requestId);
+        }
+        ServiceIntentRegistry.put(requestId, new ServiceIntentRegistry.ServiceDispatchRecord(target, serviceInfo, token, userId, startId));
+        shadow.putExtra("_B_|_request_id_", requestId);
         shadow.putExtra("_B_|_user_id_", userId);
         shadow.putExtra("_B_|_start_id_", startId);
         BundleCompat.putBinder(shadow, "_B_|_token_", token);
     }
 
     public static ProxyServiceRecord create(Intent intent) {
+        String requestId = intent.getStringExtra("_B_|_request_id_");
+        ServiceIntentRegistry.ServiceDispatchRecord rec = ServiceIntentRegistry.get(requestId);
+        if (rec != null) {
+            return new ProxyServiceRecord(rec.targetIntent, rec.serviceInfo, rec.token, rec.userId, rec.startId);
+        }
         Intent target = intent.getParcelableExtra("_B_|_target_");
         ServiceInfo serviceInfo = intent.getParcelableExtra("_B_|_service_info_");
         int userId = intent.getIntExtra("_B_|_user_id_", 0);
