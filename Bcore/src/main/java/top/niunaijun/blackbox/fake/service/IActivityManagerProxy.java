@@ -667,9 +667,26 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 Object o = args[i];
                 if (o instanceof String[]) {
                     args[i] = null;
+                } else if (o instanceof Integer && (Integer) o == -1) {
+                    args[i] = BActivityThread.getUserId();
                 }
             }
-            return method.invoke(who, args);
+
+            try {
+                return method.invoke(who, args);
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                if (e.getCause() instanceof SecurityException && e.getCause().getMessage() != null && e.getCause().getMessage().contains("INTERACT_ACROSS_USERS")) {
+                    Slog.w(TAG, "SecurityException in BroadcastIntent (INTERACT_ACROSS_USERS): " + e.getCause().getMessage());
+                    return 0; // ActivityManager.BROADCAST_SUCCESS
+                }
+                throw e;
+            } catch (SecurityException e) {
+                if (e.getMessage() != null && e.getMessage().contains("INTERACT_ACROSS_USERS")) {
+                    Slog.w(TAG, "SecurityException in BroadcastIntent (INTERACT_ACROSS_USERS): " + e.getMessage());
+                    return 0; // ActivityManager.BROADCAST_SUCCESS
+                }
+                throw e;
+            }
         }
 
         int getIntentIndex(Object[] args) {
