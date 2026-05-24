@@ -41,6 +41,22 @@ import top.niunaijun.blackbox.utils.compat.ParceledListSliceCompat;
 public class IPackageManagerProxy extends BinderInvocationStub {
     public static final String TAG = "PackageManagerStub";
 
+    private static final String GMS_INTERNAL_BROADCAST_PERMISSION = "com.google.android.gms.permission.INTERNAL_BROADCAST";
+
+    private static boolean isGmsInternalPermission(String permission) {
+        return GMS_INTERNAL_BROADCAST_PERMISSION.equals(permission);
+    }
+
+    private static boolean isGmsRelatedPackage(String packageName) {
+        if (packageName == null) return false;
+        return packageName.equals("com.google.android.gms")
+                || packageName.equals("com.google.android.gsf")
+                || packageName.equals("com.android.vending")
+                || packageName.startsWith("com.google.android.gms.")
+                || packageName.startsWith("com.google.android.gsf.")
+                || packageName.startsWith("com.android.vending.");
+    }
+
     public IPackageManagerProxy() {
         super(BRActivityThread.get().sPackageManager().asBinder());
     }
@@ -432,8 +448,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 Slog.d(TAG, "SimpleAudioPermissionHook: Granting notification/Xiaomi permission: " + permission + " to " + packageName);
                 return PackageManager.PERMISSION_GRANTED;
             }
-            
-            
+
+            if (isGmsInternalPermission(permission) && isGmsRelatedPackage(packageName)) {
+                Slog.d(TAG, "SimpleAudioPermissionHook: Granting GMS internal permission: " + permission + " to " + packageName);
+                return PackageManager.PERMISSION_GRANTED;
+            }
+
             return method.invoke(who, args);
         }
     }
@@ -462,8 +482,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 Slog.d(TAG, "CheckSelfPermission: Granting notification/Xiaomi permission: " + permission + " to " + packageName);
                 return PackageManager.PERMISSION_GRANTED;
             }
-            
-            
+
+            if (isGmsInternalPermission(permission) && isGmsRelatedPackage(packageName)) {
+                Slog.d(TAG, "CheckSelfPermission: Granting GMS internal permission: " + permission + " to " + packageName);
+                return PackageManager.PERMISSION_GRANTED;
+            }
+
             return method.invoke(who, args);
         }
     }

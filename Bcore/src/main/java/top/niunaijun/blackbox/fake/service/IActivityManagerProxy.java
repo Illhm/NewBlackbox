@@ -65,6 +65,12 @@ import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 @ScanClass(ActivityManagerCommonProxy.class)
 public class IActivityManagerProxy extends ClassInvocationStub {
 
+    private static final String GMS_INTERNAL_BROADCAST_PERMISSION = "com.google.android.gms.permission.INTERNAL_BROADCAST";
+
+    private static boolean isGmsInternalPermission(String permission) {
+        return GMS_INTERNAL_BROADCAST_PERMISSION.equals(permission);
+    }
+
     private static boolean shouldBypassPendingProxy(Intent intent) {
         if (intent == null) {
             return true;
@@ -81,7 +87,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         return "com.android.vending".equals(pkg);
     }
 
-#<<<<<<< codex/fix-array-null-pointer-exceptions-6gx866
     private static boolean shouldForceVirtualProvider(String authority) {
         if (authority == null) {
             return false;
@@ -92,8 +97,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 || authority.startsWith("com.google.android.webview")
                 || authority.startsWith("com.google.android.trichromelibrary");
     }
-#=======
-#>>>>>>> main
 
     public static final String TAG = "ActivityManagerStub";
 
@@ -163,7 +166,8 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class GetContentProvider extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            int authIndex = getAuthIndex();
+            int authIndex = getAuthIndex(args);
+            int userIndex = getUserIndex(args, authIndex);
             Object auth = args[authIndex];
             Object content = null;
 
@@ -192,7 +196,20 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                         && sandboxHasGms;
 
                 if (isSystemAuth || (isGmsAuth && !sandboxHasGms)) {
-                    content = method.invoke(who, args);
+                    try {
+                        content = method.invoke(who, args);
+                    } catch (SecurityException se) {
+                        if (!isGmsAuth) {
+                            throw se;
+                        }
+                        Slog.w(TAG, "Host provider permission check failed for " + authStr
+                                + ", retrying with host package identity.", se);
+                        if (BuildCompat.isQ()) {
+                            args[1] = BlackBoxCore.getHostPkg();
+                        }
+                        args[userIndex] = BlackBoxCore.getHostUserId();
+                        content = method.invoke(who, args);
+                    }
                     ContentProviderDelegate.update(content, authStr);
                     return content;
                 }
@@ -227,7 +244,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                                 .acquireContentProviderClient(providerInfo);
                     }
                     args[authIndex] = ProxyManifest.getProxyAuthorities(appConfig.bpid);
-                    args[getUserIndex()] = BlackBoxCore.getHostUserId();
+                    args[userIndex] = BlackBoxCore.getHostUserId();
                 }
                 if (providerBinder == null) {
                     if (forceVirtualProvider) {
@@ -240,7 +257,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                                 + " could not be bound for user " + userId
                                 + ", falling back to host.");
                         args[authIndex] = authStr;
-                        args[getUserIndex()] = userId;
+                        args[userIndex] = userId;
                         content = method.invoke(who, args);
                         ContentProviderDelegate.update(content, authStr);
                         return content;
@@ -263,17 +280,33 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             return method.invoke(who, args);
         }
 
-        protected int getAuthIndex() {
-            
-            if (BuildCompat.isQ()) {
-                return 2;
-            } else {
-                return 1;
+        protected int getAuthIndex(Object[] args) {
+            if (args == null || args.length == 0) {
+                return BuildCompat.isQ() ? 2 : 1;
             }
+            for (int i = args.length - 1; i >= 0; i--) {
+                Object value = args[i];
+                if (value instanceof String) {
+                    String candidate = (String) value;
+                    if (candidate.contains(".") || "settings".equals(candidate)
+                            || "media".equals(candidate) || "telephony".equals(candidate)) {
+                        return i;
+                    }
+                }
+            }
+            return BuildCompat.isQ() ? 2 : 1;
         }
 
-        protected int getUserIndex() {
-            return getAuthIndex() + 1;
+        protected int getUserIndex(Object[] args, int authIndex) {
+            if (args == null || args.length == 0) {
+                return authIndex + 1;
+            }
+            for (int i = authIndex + 1; i < args.length; i++) {
+                if (args[i] instanceof Integer) {
+                    return i;
+                }
+            }
+            return authIndex + 1;
         }
     }
 
@@ -859,7 +892,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 Slog.d(TAG, "ActivityManager checkPermission: Granting storage/media permission: " + permission);
                 return PackageManager.PERMISSION_GRANTED;
             }
-            
+
+            if (isGmsInternalPermission(permission)) {
+                Slog.d(TAG, "ActivityManager checkPermission: Granting GMS internal permission: " + permission);
+                return PackageManager.PERMISSION_GRANTED;
+            }
+
             return method.invoke(who, args);
         }
     }
