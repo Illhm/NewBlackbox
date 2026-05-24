@@ -15,6 +15,7 @@ import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Slog;
+import top.niunaijun.blackbox.utils.AttributionSourceCompatFixer;
 
 
 public class IAccountManagerProxy extends BinderInvocationStub {
@@ -47,6 +48,7 @@ public class IAccountManagerProxy extends BinderInvocationStub {
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         Slog.d(TAG, "call " + method.getName());
+        AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
         return super.invoke(proxy, method, args);
     }
 

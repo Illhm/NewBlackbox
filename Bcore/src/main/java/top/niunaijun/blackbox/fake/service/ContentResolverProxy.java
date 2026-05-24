@@ -8,6 +8,7 @@ import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Slog;
+import top.niunaijun.blackbox.utils.AttributionSourceCompatFixer;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 
 
@@ -53,11 +54,13 @@ public class ContentResolverProxy extends ClassInvocationStub {
                     Slog.d(TAG, "ContentResolver: Allowing audio query: " + uriString);
                     
                     
-                    return method.invoke(who, args);
+                    AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
+            return method.invoke(who, args);
                 }
             }
             
             
+            AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
             return method.invoke(who, args);
         }
     }
@@ -81,11 +84,13 @@ public class ContentResolverProxy extends ClassInvocationStub {
                     Slog.d(TAG, "ContentResolver: Allowing audio query with projection: " + uriString);
                     
                     
-                    return method.invoke(who, args);
+                    AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
+            return method.invoke(who, args);
                 }
             }
             
             
+            AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
             return method.invoke(who, args);
         }
     }
@@ -104,6 +109,7 @@ public class ContentResolverProxy extends ClassInvocationStub {
                 }
             }
             
+            AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
             return method.invoke(who, args);
         }
     }
@@ -122,6 +128,7 @@ public class ContentResolverProxy extends ClassInvocationStub {
                 }
             }
             
+            AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
             return method.invoke(who, args);
         }
     }
@@ -140,6 +147,7 @@ public class ContentResolverProxy extends ClassInvocationStub {
                 }
             }
             
+            AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
             return method.invoke(who, args);
         }
     }

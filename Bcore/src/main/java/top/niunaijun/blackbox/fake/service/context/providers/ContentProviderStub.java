@@ -10,6 +10,7 @@ import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
 import top.niunaijun.blackbox.utils.compat.ContextCompat;
 import top.niunaijun.blackbox.utils.Slog;
+import top.niunaijun.blackbox.utils.AttributionSourceCompatFixer;
 import android.os.Bundle;
 import top.niunaijun.blackbox.utils.AttributionSourceUtils;
 
@@ -54,7 +55,7 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
         
         if ("call".equals(methodName)) {
             
-            AttributionSourceUtils.fixAttributionSourceInArgs(args);
+            AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
         } else {
             
             if (args != null && args.length > 0) {
@@ -70,7 +71,7 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                     }
                 }
                 
-                AttributionSourceUtils.fixAttributionSourceInArgs(args);
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
             }
         }
         
@@ -87,8 +88,15 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                 
                 Throwable cause = e.getCause();
                 if (isUidMismatchError(cause)) {
-                    Slog.w(TAG, "UID mismatch in ContentProvider call, returning safe default: " + cause.getMessage());
-                    return getSafeDefaultValue(methodName, method.getReturnType());
+                    Slog.w(TAG, "UID mismatch in ContentProvider call, attempting AttributionSource fix+retry once: " + cause.getMessage());
+                    AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
+                    try {
+                        return method.invoke(mBase, args);
+                    } catch (Throwable retryError) {
+                        Throwable rc = retryError.getCause() != null ? retryError.getCause() : retryError;
+                        Slog.e(TAG, "Retry failed authority=" + mAppPkg + " method=" + methodName + " callingUid=" + android.os.Binder.getCallingUid() + " err=" + rc.getMessage());
+                        return getSafeDefaultValue(methodName, method.getReturnType());
+                    }
                 } else if (cause instanceof RuntimeException) {
                     String message = cause.getMessage();
                     if (message != null && (message.contains("uid") || message.contains("permission"))) {

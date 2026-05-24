@@ -11,6 +11,7 @@ import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Slog;
+import top.niunaijun.blackbox.utils.AttributionSourceCompatFixer;
 
 
 public class GmsProxy extends BinderInvocationStub {
@@ -22,9 +23,16 @@ public class GmsProxy extends BinderInvocationStub {
 
     @Override
     protected Object getWho() {
-        IBinder binder = BRServiceManager.get().getService("gms");
+        IBinder binder = null;
+        for (int i = 0; i < 3 && binder == null; i++) {
+            binder = BRServiceManager.get().getService("gms");
+            if (binder == null) {
+                Slog.w(TAG, "GmsProxy: waiting for gms service, attempt=" + (i + 1));
+                try { Thread.sleep(80L); } catch (InterruptedException ignored) {}
+            }
+        }
         if (binder == null) {
-            Slog.e(TAG, "Failed to get gms service binder");
+            Slog.e(TAG, "GmsProxy: failed after retries: reason=binder_null");
             return null;
         }
         try {
@@ -32,7 +40,7 @@ public class GmsProxy extends BinderInvocationStub {
             Method asInterfaceMethod = stubClass.getMethod("asInterface", IBinder.class);
             Object iface = asInterfaceMethod.invoke(null, binder);
             if (iface != null) {
-                Slog.d(TAG, "Successfully obtained IGmsServiceBroker interface");
+                Slog.d(TAG, "GmsProxy: acquired binder from ServiceManager:gms");
                 return iface;
             } else {
                 Slog.e(TAG, "Reflection succeeded but returned null interface");
@@ -69,6 +77,7 @@ public class GmsProxy extends BinderInvocationStub {
                         Slog.d(TAG, "GmsProxy: Fixed calling package from com.google.android.gms to " + BlackBoxCore.getHostPkg());
                     }
                 }
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.e(TAG, "GmsProxy: Error in getService", e);
@@ -84,6 +93,7 @@ public class GmsProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.e(TAG, "GmsProxy: Error in getServiceBroker", e);
@@ -100,6 +110,7 @@ public class GmsProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
                 Slog.d(TAG, "GmsProxy: Handling authenticate call");
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GmsProxy: Authentication error, returning success", e);
@@ -116,6 +127,7 @@ public class GmsProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
                 Slog.d(TAG, "GmsProxy: Handling getAccount call");
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GmsProxy: GetAccount error, returning null", e);
@@ -131,6 +143,7 @@ public class GmsProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
                 Slog.d(TAG, "GmsProxy: Handling getToken call");
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GmsProxy: GetToken error, returning mock token", e);
@@ -146,6 +159,7 @@ public class GmsProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
                 Slog.d(TAG, "GmsProxy: Handling invalidateToken call");
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GmsProxy: InvalidateToken error, ignoring", e);
@@ -161,6 +175,7 @@ public class GmsProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
                 Slog.d(TAG, "GmsProxy: Handling clearToken call");
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GmsProxy: ClearToken error, ignoring", e);
