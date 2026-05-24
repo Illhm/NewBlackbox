@@ -72,6 +72,10 @@ public class ActivityManagerCommonProxy {
             intent = sanitizedIntent;
 
             if (trustedGms) {
+                Slog.i(TAG, "AccountPickerRoute: using virtual GMS activity");
+                String virtualPkg = BActivityThread.getAppPackageName();
+                rewriteGoogleAuthExtras(sanitizedIntent, virtualPkg);
+                Slog.i(TAG, "GoogleAuthRoute: virtualCallerPkg=" + virtualPkg + ", hostPkg=" + BlackBoxCore.getHostPkg() + ", targetPkg=" + (sanitizedIntent.getComponent()!=null?sanitizedIntent.getComponent().getPackageName():sanitizedIntent.getPackage()));
                 Slog.i(TAG, "GMS trusted dispatch BYPASS_PROXY requestId=" + requestId + " intent=" + sanitizedIntent);
                 ActivityResultBridge.put(new ActivityResultBridge.RequestRecord(
                         requestId,

@@ -42,6 +42,7 @@ public class GmsProxy extends BinderInvocationStub {
         boolean retryEnabled = !"false".equalsIgnoreCase(System.getProperty("blackbox.fix.gmsproxy.retry.enabled", "true"));
         int attempts = retryEnabled ? 3 : 1;
         IBinder fetched = null;
+        Slog.i(TAG, "GmsProxy: resolving binder on first call method=getWho");
         for (int i = 0; i < attempts && fetched == null; i++) {
             fetched = BRServiceManager.get().getService("gms");
             if (fetched == null) {
@@ -52,6 +53,7 @@ public class GmsProxy extends BinderInvocationStub {
             }
         }
         if (fetched == null) {
+            Slog.i(TAG, "GmsProxy: lazy mode, gms process not running yet");
             Slog.e(TAG, "GmsProxy: failed after retries: reason=binder_null");
             Slog.e(TAG, "GmsProxy: state gmsInstalled=" + BlackBoxCore.get().isInstalled("com.google.android.gms", BlackBoxCore.getUserId())
                     + " gsfInstalled=" + BlackBoxCore.get().isInstalled("com.google.android.gsf", BlackBoxCore.getUserId())
@@ -81,7 +83,7 @@ public class GmsProxy extends BinderInvocationStub {
             Method asInterfaceMethod = stubClass.getMethod("asInterface", IBinder.class);
             Object iface = asInterfaceMethod.invoke(null, binder);
             if (iface != null) {
-                Slog.d(TAG, "GmsProxy: acquired binder from ServiceManager:gms");
+                Slog.d(TAG, "GmsProxy: acquired binder after virtual gms start");
                 return iface;
             }
             return null;
@@ -111,9 +113,12 @@ public class GmsProxy extends BinderInvocationStub {
                 if (args != null && args.length > 0) {
                     String callingPackage = (String) args[0];
                     if ("com.google.android.gms".equals(callingPackage)) {
-                        
-                        args[0] = BlackBoxCore.getHostPkg();
-                        Slog.d(TAG, "GmsProxy: Fixed calling package from com.google.android.gms to " + BlackBoxCore.getHostPkg());
+                        String virtualPkg = top.niunaijun.blackbox.app.BActivityThread.getAppPackageName();
+                        if (virtualPkg != null && !virtualPkg.equals(BlackBoxCore.getHostPkg())) {
+                            args[0] = virtualPkg;
+                            Slog.i(TAG, "GoogleAuthRoute: virtualCallerPkg=" + virtualPkg + ", hostPkg=" + BlackBoxCore.getHostPkg() + ", targetPkg=com.google.android.gms");
+                            Slog.i(TAG, "GoogleAuthRoute: rewritten AccountPicker caller from " + BlackBoxCore.getHostPkg() + " to " + virtualPkg);
+                        }
                     }
                 }
                 AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);

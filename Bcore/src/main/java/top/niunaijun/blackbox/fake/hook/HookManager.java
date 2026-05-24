@@ -89,6 +89,7 @@ import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.fake.service.ISettingsProviderProxy;
 import top.niunaijun.blackbox.fake.service.FeatureFlagUtilsProxy;
 import top.niunaijun.blackbox.fake.service.WorkManagerProxy;
+import top.niunaijun.blackbox.utils.ProcessHookGuard;
 
 
 
@@ -104,6 +105,12 @@ public class HookManager {
     }
 
     public void init() {
+        String processName = BlackBoxCore.getProcessName(BlackBoxCore.getContext());
+        if (!ProcessHookGuard.shouldInstallVirtualHooks(BlackBoxCore.getContext(), processName)) {
+            addInjector(AppInstrumentation.get());
+            injectAll();
+            return;
+        }
         if (BlackBoxCore.get().isBlackProcess() || BlackBoxCore.get().isServerProcess()) {
             addInjector(new IDisplayManagerProxy());
             addInjector(new OsStub());
