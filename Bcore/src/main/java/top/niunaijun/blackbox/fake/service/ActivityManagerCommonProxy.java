@@ -17,6 +17,10 @@ import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.fake.provider.FileProviderHandler;
 import top.niunaijun.blackbox.utils.ComponentUtils;
+import top.niunaijun.blackbox.utils.ProxyIntentGuard;
+import top.niunaijun.blackbox.utils.IntentSanitizer;
+import top.niunaijun.blackbox.utils.GmsCompatibilityLayer;
+import top.niunaijun.blackbox.utils.ActivityResultBridge;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
@@ -52,10 +56,35 @@ public class ActivityManagerCommonProxy {
             Slog.d(TAG, "Hook in : " + intent);
             assert intent != null;
 
-            if (maybeRouteSandboxAccountPicker(intent)) {
+            if (ProxyIntentGuard.isSelfProxyTarget(intent, BlackBoxCore.getHostPkg())) {
+                Slog.w(TAG, "Dropping self-proxy loop intent: " + intent);
+                return 0;
+            }
+            String requestId = ProxyIntentGuard.ensureRequestId(intent);
+            boolean trustedGms = GmsCompatibilityLayer.shouldBypassProxyForTrustedGms(intent)
+                    || GmsCompatibilityLayer.isGoogleLoginAction(intent);
+            if (ProxyIntentGuard.shouldDropAsLoop(intent, BActivityThread.getAppPackageName())) {
+                Slog.w(TAG, "Detected repeated intent loop, dropping. requestId=" + requestId + " intent=" + intent);
+                return 0;
+            }
+            Intent sanitizedIntent = IntentSanitizer.sanitize(intent, trustedGms);
+            args[getIntentIndex(args)] = sanitizedIntent;
+            intent = sanitizedIntent;
+
+            if (trustedGms) {
+                Slog.i(TAG, "GMS trusted dispatch BYPASS_PROXY requestId=" + requestId + " intent=" + sanitizedIntent);
+                ActivityResultBridge.put(new ActivityResultBridge.RequestRecord(
+                        requestId,
+                        BActivityThread.getAppPackageName(),
+                        StartActivityCompat.getRequestCode(args),
+                        StartActivityCompat.getResultTo(args),
+                        sanitizedIntent));
                 return method.invoke(who, args);
             }
 
+            if (maybeRouteSandboxAccountPicker(intent)) {
+                return method.invoke(who, args);
+            }
 
             if (intent.getParcelableExtra("_B_|_target_") != null) {
                 return method.invoke(who, args);
@@ -129,13 +158,14 @@ public class ActivityManagerCommonProxy {
             return 0;
         }
 
+        private int getIntentIndex(Object[] args) {
+            if (BuildCompat.isR()) return 3;
+            for (int i = 0; i < args.length; i++) if (args[i] instanceof Intent) return i;
+            return 2;
+        }
+
         private Intent getIntent(Object[] args) {
-            int index;
-            if (BuildCompat.isR()) {
-                index = 3;
-            } else {
-                index = 2;
-            }
+            int index = getIntentIndex(args);
             if (args[index] instanceof Intent) {
                 return (Intent) args[index];
             }

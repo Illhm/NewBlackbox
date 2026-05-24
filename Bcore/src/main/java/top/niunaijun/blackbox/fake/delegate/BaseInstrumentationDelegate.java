@@ -20,6 +20,8 @@ import android.os.UserHandle;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 
+import java.util.WeakHashMap;
+
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback;
@@ -28,6 +30,7 @@ import top.niunaijun.blackbox.utils.Reflector;
 public class BaseInstrumentationDelegate extends Instrumentation {
 
     protected Instrumentation mBaseInstrumentation;
+    private static final WeakHashMap<Activity, Long> RESUME_GUARD = new WeakHashMap<>();
 
 
     @Override
@@ -371,6 +374,20 @@ public class BaseInstrumentationDelegate extends Instrumentation {
 
     @Override
     public void callActivityOnResume(Activity activity) {
+        long now = android.os.SystemClock.elapsedRealtime();
+        synchronized (RESUME_GUARD) {
+            Long prev = RESUME_GUARD.get(activity);
+            if (prev != null && now - prev < 500) {
+                android.util.Log.w("BaseInstrumentationDelegate", "Skip duplicate callActivityOnResume: " + activity.getClass().getName());
+                return;
+            }
+            RESUME_GUARD.put(activity, now);
+        }
+        String cls = activity.getClass().getName();
+        if ("com.google.android.gms.common.account.AccountPickerActivity".equals(cls)
+                || "com.google.android.gms.feedback.FeedbackActivity".equals(cls)) {
+            android.util.Log.i("BaseInstrumentationDelegate", "GMS special activity resume without proxy redispatch: " + cls);
+        }
         mBaseInstrumentation.callActivityOnResume(activity);
         for (AppLifecycleCallback appLifecycleCallback : BlackBoxCore.get().getAppLifecycleCallbacks()) {
             appLifecycleCallback.onActivityResumed(activity);
