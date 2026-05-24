@@ -679,14 +679,26 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 ProxyBroadcastRecord.saveStub(proxyIntent, intent, BActivityThread.getUserId());
                 args[intentIndex] = proxyIntent;
             }
-            
+
             for (int i = 0; i < args.length; i++) {
                 Object o = args[i];
                 if (o instanceof String[]) {
                     args[i] = null;
+                } else if (o instanceof Integer && ((Integer) o) == -1) {
+                    args[i] = BActivityThread.getUserId();
                 }
             }
-            return method.invoke(who, args);
+
+            try {
+                return method.invoke(who, args);
+            } catch (SecurityException e) {
+                String message = e.getMessage();
+                if (message != null && message.contains("INTERACT_ACROSS_USERS")) {
+                    Slog.w(TAG, "BroadcastIntent: Intercepted cross-user broadcast denial, returning BROADCAST_SUCCESS", e);
+                    return 0;
+                }
+                throw e;
+            }
         }
 
         int getIntentIndex(Object[] args) {
