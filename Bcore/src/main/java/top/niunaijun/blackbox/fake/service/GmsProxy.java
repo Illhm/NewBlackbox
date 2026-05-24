@@ -6,6 +6,7 @@ import android.os.Looper;
 import android.os.RemoteException;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 
 import black.android.os.BRServiceManager;
 import top.niunaijun.blackbox.BlackBoxCore;
@@ -60,7 +61,7 @@ public class GmsProxy extends BinderInvocationStub {
                     + " vendingInstalled=" + BlackBoxCore.get().isInstalled("com.android.vending", BlackBoxCore.getUserId())
                     + " gmsProcessRunning=" + (BlackBoxCore.getAppProcessName()!=null && BlackBoxCore.getAppProcessName().contains("com.google.android.gms"))
                     + " binderReady=false");
-            return null;
+            return createLazyProxy();
         }
         try {
             fetched.linkToDeath(() -> {
@@ -89,6 +90,26 @@ public class GmsProxy extends BinderInvocationStub {
             return null;
         } catch (Exception e) {
             Slog.e(TAG, "Failed to get IGmsServiceBroker interface", e);
+            return null;
+        }
+    }
+
+
+    private Object createLazyProxy() {
+        try {
+            Class<?> ifaceClass = Class.forName("com.google.android.gms.common.api.internal.IGmsServiceBroker");
+            Object proxy = Proxy.newProxyInstance(ifaceClass.getClassLoader(), new Class[]{ifaceClass}, (obj, method, args) -> {
+                Slog.i(TAG, "GmsProxy: resolving real binder on method=" + method.getName());
+                Object real = getWho();
+                if (real == null || real == obj) {
+                    throw new IllegalStateException("gms binder unresolved in lazy proxy");
+                }
+                return method.invoke(real, args);
+            });
+            Slog.i(TAG, "GmsProxy: installed lazy proxy binder");
+            return proxy;
+        } catch (Throwable e) {
+            Slog.e(TAG, "GmsProxy: failed to install lazy proxy binder", e);
             return null;
         }
     }

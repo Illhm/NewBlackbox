@@ -107,6 +107,8 @@ public class HookManager {
     public void init() {
         String processName = BlackBoxCore.getProcessName(BlackBoxCore.getContext());
         if (!ProcessHookGuard.shouldInstallVirtualHooks(BlackBoxCore.getContext(), processName)) {
+            Slog.i(TAG, "ProcessHookGuard: host core services enabled");
+            Slog.i(TAG, "ProcessHookGuard: host client fake hooks skipped");
             addInjector(AppInstrumentation.get());
             injectAll();
             return;

@@ -72,6 +72,16 @@ public class ActivityManagerCommonProxy {
             intent = sanitizedIntent;
 
             if (trustedGms) {
+                String beforeCalling = findCallingPackageArg(args);
+                rewriteCallingPackageArg(args, BActivityThread.getAppPackageName());
+                String afterCalling = findCallingPackageArg(args);
+                Slog.i(TAG, "AccountPickerRoute: startActivity callingPackage before=" + beforeCalling);
+                Slog.i(TAG, "AccountPickerRoute: startActivity callingPackage after=" + afterCalling);
+                Slog.i(TAG, "AccountPickerRoute: launchedFromPackage=" + BActivityThread.getAppPackageName());
+                Slog.i(TAG, "AccountPickerRoute: resultToVirtualToken=" + StartActivityCompat.getResultTo(args));
+            }
+
+            if (trustedGms) {
                 Slog.i(TAG, "AccountPickerRoute: using virtual GMS activity");
                 String virtualPkg = BActivityThread.getAppPackageName();
                 rewriteGoogleAuthExtras(sanitizedIntent, virtualPkg);
