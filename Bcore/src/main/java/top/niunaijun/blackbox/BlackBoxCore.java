@@ -1629,6 +1629,22 @@ public class BlackBoxCore extends ClientConfiguration {
     }
     
     
+
+    private void bypassHiddenApiRestrictions() {
+        try {
+            Class<?> vmRuntimeClass = Class.forName("dalvik.system.VMRuntime");
+            Method getRuntime = vmRuntimeClass.getDeclaredMethod("getRuntime");
+            Method setHiddenApiExemptions = vmRuntimeClass.getDeclaredMethod("setHiddenApiExemptions", String[].class);
+            getRuntime.setAccessible(true);
+            setHiddenApiExemptions.setAccessible(true);
+            Object runtime = getRuntime.invoke(null);
+            setHiddenApiExemptions.invoke(runtime, (Object) new String[]{"L"});
+            Slog.d(TAG, "Hidden API exemptions applied via VMRuntime");
+        } catch (Throwable e) {
+            Slog.w(TAG, "VMRuntime hidden API bypass failed", e);
+        }
+    }
+
     public static void installSystemHooks() {
         try {
             SimpleCrashFix.installSimpleFix();
@@ -1644,7 +1660,9 @@ public class BlackBoxCore extends ClientConfiguration {
             throw new IllegalArgumentException("ClientConfiguration is null!");
         }
 
-        if(!NativeCore.disableHiddenApi()){
+        boolean hiddenApiDisabled = NativeCore.disableHiddenApi();
+        bypassHiddenApiRestrictions();
+        if(!hiddenApiDisabled){
             try {
                 Reflection.unseal(context);
             } catch (Throwable t) {
