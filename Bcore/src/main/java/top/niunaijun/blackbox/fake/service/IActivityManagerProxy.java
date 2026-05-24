@@ -660,6 +660,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             if (proxyIntent != null) {
                 proxyIntent.setExtrasClassLoader(BActivityThread.getApplication().getClassLoader());
                 ProxyBroadcastRecord.saveStub(proxyIntent, intent, BActivityThread.getUserId());
+                // Pre-collect nested intents to bypass IntentRedirect Hardening warning
+                if (proxyIntent.getExtras() != null) {
+                    if (BuildCompat.isR()) {
+                        proxyIntent.removeFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                    }
+                }
                 args[intentIndex] = proxyIntent;
             }
             
