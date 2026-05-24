@@ -7,11 +7,16 @@ import android.os.Process;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 
 public final class AttributionSourceCompatFixer {
     private static final String TAG = "AttributionSourceFix";
+    private static final int MAX_DEPTH = 6;
+    private static final int LOG_LIMIT = 20;
+    private static final Map<String, Integer> LOG_COUNT = new ConcurrentHashMap<>();
 
     private AttributionSourceCompatFixer() {}
 
@@ -20,19 +25,22 @@ public final class AttributionSourceCompatFixer {
     }
 
     public static void fixArgsForFrameworkCall(Object[] args, String virtualPkg, String processName) {
-        if (args == null) return;
-        for (Object arg : args) fixObjectRecursive(arg, virtualPkg, processName);
+        if (!isEnabled() || args == null) return;
+        for (Object arg : args) fixObjectRecursive(arg, virtualPkg, processName, 0);
     }
 
-    private static void fixObjectRecursive(Object obj, String virtualPkg, String processName) {
-        if (obj == null) return;
+    private static void fixObjectRecursive(Object obj, String virtualPkg, String processName, int depth) {
+        if (obj == null || depth > MAX_DEPTH) return;
         try {
             String n = obj.getClass().getName();
             if (n.contains("AttributionSource")) {
                 fixAttributionSource(obj, virtualPkg, processName);
+            } else if (obj instanceof Object[]) {
+                Object[] arr = (Object[]) obj;
+                for (Object item : arr) fixObjectRecursive(item, virtualPkg, processName, depth + 1);
             } else if (obj instanceof android.os.Bundle) {
                 android.os.Bundle b = (android.os.Bundle) obj;
-                for (String k : b.keySet()) fixObjectRecursive(b.get(k), virtualPkg, processName);
+                for (String k : b.keySet()) fixObjectRecursive(b.get(k), virtualPkg, processName, depth + 1);
             }
         } catch (Throwable ignored) {
         }
@@ -52,7 +60,7 @@ public final class AttributionSourceCompatFixer {
         int resolvedUid = resolveCorrectFrameworkUid(BlackBoxCore.getContext(), virtualPkg, processName, incomingUid);
         String resolvedPkg = resolvePkgForUid(resolvedUid, virtualPkg);
         if (resolvedPkg == null) resolvedPkg = BlackBoxCore.getHostPkg();
-        Slog.d(TAG, "AttributionSourceFix: before uid=" + incomingUid + ", pkg=" + oldPkg + ", callerUid=" + Binder.getCallingUid());
+        if (shouldLog(processName+"|before")) Slog.d(TAG, "AttributionSourceFix: before uid=" + incomingUid + ", pkg=" + oldPkg + ", callerUid=" + Binder.getCallingUid());
 
         boolean mutated = setAttrFields(src, resolvedUid, resolvedPkg);
         if (!mutated) {
@@ -64,7 +72,7 @@ public final class AttributionSourceCompatFixer {
         }
         Object next = invokeNoArg(src, "getNext");
         if (next != null) fixAttributionSource(next, virtualPkg, processName);
-        Slog.d(TAG, "AttributionSourceFix: after uid=" + safeInt(readField(src, "uid"), safeInt(readField(src, "mUid"), -1))
+        if (shouldLog(processName+"|after")) Slog.d(TAG, "AttributionSourceFix: after uid=" + safeInt(readField(src, "uid"), safeInt(readField(src, "mUid"), -1))
                 + ", pkg=" + safeString(readField(src, "packageName"), safeString(readField(src, "mPackageName"), null))
                 + ", callerUid=" + Binder.getCallingUid());
 
@@ -122,6 +130,18 @@ public final class AttributionSourceCompatFixer {
         }
     }
 
+
+    private static boolean isEnabled() {
+        String v = System.getProperty("blackbox.fix.attribution.enabled", "true");
+        return !"false".equalsIgnoreCase(v);
+    }
+
+    private static boolean shouldLog(String key) {
+        int c = LOG_COUNT.getOrDefault(key, 0);
+        if (c >= LOG_LIMIT) return false;
+        LOG_COUNT.put(key, c + 1);
+        return true;
+    }
     private static boolean setFieldOrSetter(Object obj, String name, Object v) {
         try { Field f=obj.getClass().getDeclaredField(name); f.setAccessible(true); f.set(obj,v); return true; } catch (Throwable ignore) {}
         try { Method m=obj.getClass().getDeclaredMethod("set"+Character.toUpperCase(name.charAt(0))+name.substring(1), v instanceof Integer?int.class:String.class); m.setAccessible(true); m.invoke(obj,v); return true; } catch (Throwable ignore) {}

@@ -3,6 +3,7 @@ package top.niunaijun.blackbox.fake.service;
 import android.content.Context;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.RemoteException;
 
 import java.lang.reflect.Method;
 
@@ -17,6 +18,8 @@ import top.niunaijun.blackbox.utils.AttributionSourceCompatFixer;
 
 public class GmsProxy extends BinderInvocationStub {
     public static final String TAG = "GmsProxy";
+    private static final Object BINDER_LOCK = new Object();
+    private static volatile IBinder sCachedBinder;
 
     public GmsProxy() {
         super(BRServiceManager.get().getService("gms"));
@@ -24,17 +27,31 @@ public class GmsProxy extends BinderInvocationStub {
 
     @Override
     protected Object getWho() {
-        IBinder binder = null;
-        for (int i = 0; i < 3 && binder == null; i++) {
-            binder = BRServiceManager.get().getService("gms");
-            if (binder == null) {
+        IBinder binder;
+        synchronized (BINDER_LOCK) {
+            binder = sCachedBinder;
+            if (binder != null && binder.isBinderAlive()) {
+                return toBrokerInterface(binder);
+            }
+            if (binder != null && !binder.isBinderAlive()) {
+                Slog.w(TAG, "GmsProxy: binder died, clearing cache");
+                sCachedBinder = null;
+            }
+        }
+
+        boolean retryEnabled = !"false".equalsIgnoreCase(System.getProperty("blackbox.fix.gmsproxy.retry.enabled", "true"));
+        int attempts = retryEnabled ? 3 : 1;
+        IBinder fetched = null;
+        for (int i = 0; i < attempts && fetched == null; i++) {
+            fetched = BRServiceManager.get().getService("gms");
+            if (fetched == null) {
                 Slog.w(TAG, "GmsProxy: waiting for gms service, attempt=" + (i + 1));
-                if (Looper.myLooper() != Looper.getMainLooper()) {
+                if (retryEnabled && Looper.myLooper() != Looper.getMainLooper()) {
                     try { Thread.sleep(80L); } catch (InterruptedException ignored) {}
                 }
             }
         }
-        if (binder == null) {
+        if (fetched == null) {
             Slog.e(TAG, "GmsProxy: failed after retries: reason=binder_null");
             Slog.e(TAG, "GmsProxy: state gmsInstalled=" + BlackBoxCore.get().isInstalled("com.google.android.gms", BlackBoxCore.getUserId())
                     + " gsfInstalled=" + BlackBoxCore.get().isInstalled("com.google.android.gsf", BlackBoxCore.getUserId())
@@ -44,16 +61,30 @@ public class GmsProxy extends BinderInvocationStub {
             return null;
         }
         try {
+            fetched.linkToDeath(() -> {
+                synchronized (BINDER_LOCK) {
+                    sCachedBinder = null;
+                }
+                Slog.w(TAG, "GmsProxy: binder died, clearing cache");
+            }, 0);
+        } catch (RemoteException ignored) {
+        }
+        synchronized (BINDER_LOCK) {
+            sCachedBinder = fetched;
+        }
+        return toBrokerInterface(fetched);
+    }
+
+    private Object toBrokerInterface(IBinder binder) {
+        try {
             Class<?> stubClass = Class.forName("com.google.android.gms.common.api.internal.IGmsServiceBroker$Stub");
             Method asInterfaceMethod = stubClass.getMethod("asInterface", IBinder.class);
             Object iface = asInterfaceMethod.invoke(null, binder);
             if (iface != null) {
                 Slog.d(TAG, "GmsProxy: acquired binder from ServiceManager:gms");
                 return iface;
-            } else {
-                Slog.e(TAG, "Reflection succeeded but returned null interface");
-                return null;
             }
+            return null;
         } catch (Exception e) {
             Slog.e(TAG, "Failed to get IGmsServiceBroker interface", e);
             return null;
