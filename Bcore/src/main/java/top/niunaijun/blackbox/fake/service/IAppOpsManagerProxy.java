@@ -57,28 +57,47 @@ public class IAppOpsManagerProxy extends BinderInvocationStub {
         if (args == null || args.length == 0) return;
 
         int hostUid = BlackBoxCore.getHostUid() > 0 ? BlackBoxCore.getHostUid() : Process.myUid();
-        boolean hasHostPackage = false;
-
-        for (Object arg : args) {
-            if (arg instanceof String && BlackBoxCore.getHostPkg().equals(arg)) {
-                hasHostPackage = true;
+        int hostPkgIndex = -1;
+        for (int i = 0; i < args.length; i++) {
+            if (args[i] instanceof String && BlackBoxCore.getHostPkg().equals(args[i])) {
+                hostPkgIndex = i;
                 break;
             }
         }
+        if (hostPkgIndex < 0) return;
 
-        if (!hasHostPackage) return;
+        int uidIndex = findUidIndexNearPackage(args, hostPkgIndex);
+        if (uidIndex < 0) return;
 
+        int uid = (Integer) args[uidIndex];
+        if (uid > 0 && uid != hostUid) {
+            args[uidIndex] = hostUid;
+            Slog.d(TAG, "Fixed AppOps uid mismatch in " + methodName + " at index " + uidIndex + ": " + uid + " -> " + hostUid);
+        }
+    }
+
+    private static int findUidIndexNearPackage(Object[] args, int packageIndex) {
+        // AppOps signatures typically place uid immediately before packageName.
+        if (packageIndex - 1 >= 0 && args[packageIndex - 1] instanceof Integer) {
+            return packageIndex - 1;
+        }
+        // Fallback for variants where uid is the next field.
+        if (packageIndex + 1 < args.length && args[packageIndex + 1] instanceof Integer) {
+            return packageIndex + 1;
+        }
+        // Last resort: select the closest positive int around package index.
+        int best = -1;
+        int bestDistance = Integer.MAX_VALUE;
         for (int i = 0; i < args.length; i++) {
-            Object arg = args[i];
-            if (arg instanceof Integer) {
-                int uid = (Integer) arg;
-                if (uid != hostUid && uid > 0) {
-                    args[i] = hostUid;
-                    Slog.d(TAG, "Fixed AppOps uid mismatch in " + methodName + " at index " + i + ": " + uid + " -> " + hostUid);
-                    return;
+            if (args[i] instanceof Integer && ((Integer) args[i]) > 0) {
+                int d = Math.abs(i - packageIndex);
+                if (d < bestDistance) {
+                    best = i;
+                    bestDistance = d;
                 }
             }
         }
+        return best;
     }
 
     @ProxyMethod("checkPackage")
