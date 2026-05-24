@@ -50,12 +50,16 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
         
         
         String methodName = method.getName();
+        String authority = findAuthority(args);
+        if (isGoogleOrAuthProvider(authority)) {
+            Slog.i(TAG, "provider=" + authority + " method=" + methodName + " virtualPkg=" + BActivityThread.getAppPackageName());
+        }
         
         
         
         if ("call".equals(methodName)) {
             
-            AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
+            if (isGoogleOrAuthProvider(authority)) { AttributionSourceCompatFixer.fixArgsForFrameworkCall(args); }
         } else {
             
             if (args != null && args.length > 0) {
@@ -71,7 +75,7 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                     }
                 }
                 
-                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
+                if (isGoogleOrAuthProvider(authority)) { AttributionSourceCompatFixer.fixArgsForFrameworkCall(args); }
             }
         }
         
@@ -89,7 +93,7 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
                 Throwable cause = e.getCause();
                 if (isUidMismatchError(cause)) {
                     Slog.w(TAG, "UID mismatch in ContentProvider call, attempting AttributionSource fix+retry once: " + cause.getMessage());
-                    AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
+                    if (isGoogleOrAuthProvider(authority)) { AttributionSourceCompatFixer.fixArgsForFrameworkCall(args); }
                     try {
                         return method.invoke(mBase, args);
                     } catch (Throwable retryError) {
@@ -151,6 +155,22 @@ public class ContentProviderStub extends ClassInvocationStub implements BContent
             default:
                 return null; 
         }
+    }
+
+    private boolean isGoogleOrAuthProvider(String authority) {
+        if (authority == null) return false;
+        return authority.equals("com.google.android.gsf.gservices")
+                || authority.startsWith("com.google.android.gms")
+                || authority.startsWith("com.android.vending")
+                || authority.contains("accounts")
+                || authority.contains("contacts")
+                || authority.startsWith("settings");
+    }
+
+    private String findAuthority(Object[] args) {
+        if (args == null) return null;
+        for (Object arg : args) if (arg instanceof String && ((String) arg).contains(".")) return (String) arg;
+        return null;
     }
 
     private boolean isSystemProviderAuthority(String authority) {

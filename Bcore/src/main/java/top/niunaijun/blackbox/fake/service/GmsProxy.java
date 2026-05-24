@@ -2,6 +2,7 @@ package top.niunaijun.blackbox.fake.service;
 
 import android.content.Context;
 import android.os.IBinder;
+import android.os.Looper;
 
 import java.lang.reflect.Method;
 
@@ -28,11 +29,18 @@ public class GmsProxy extends BinderInvocationStub {
             binder = BRServiceManager.get().getService("gms");
             if (binder == null) {
                 Slog.w(TAG, "GmsProxy: waiting for gms service, attempt=" + (i + 1));
-                try { Thread.sleep(80L); } catch (InterruptedException ignored) {}
+                if (Looper.myLooper() != Looper.getMainLooper()) {
+                    try { Thread.sleep(80L); } catch (InterruptedException ignored) {}
+                }
             }
         }
         if (binder == null) {
             Slog.e(TAG, "GmsProxy: failed after retries: reason=binder_null");
+            Slog.e(TAG, "GmsProxy: state gmsInstalled=" + BlackBoxCore.get().isInstalled("com.google.android.gms", BlackBoxCore.getUserId())
+                    + " gsfInstalled=" + BlackBoxCore.get().isInstalled("com.google.android.gsf", BlackBoxCore.getUserId())
+                    + " vendingInstalled=" + BlackBoxCore.get().isInstalled("com.android.vending", BlackBoxCore.getUserId())
+                    + " gmsProcessRunning=" + (BlackBoxCore.getAppProcessName()!=null && BlackBoxCore.getAppProcessName().contains("com.google.android.gms"))
+                    + " binderReady=false");
             return null;
         }
         try {
@@ -112,10 +120,12 @@ public class GmsProxy extends BinderInvocationStub {
                 Slog.d(TAG, "GmsProxy: Handling authenticate call");
                 AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
+            } catch (SecurityException se) {
+                Slog.e(TAG, "GmsProxy: Authentication security error", se);
+                throw se;
             } catch (Exception e) {
-                Slog.w(TAG, "GmsProxy: Authentication error, returning success", e);
-                
-                return createMockAuthResult();
+                Slog.e(TAG, "GmsProxy: Authentication error", e);
+                throw e;
             }
         }
     }
@@ -145,9 +155,12 @@ public class GmsProxy extends BinderInvocationStub {
                 Slog.d(TAG, "GmsProxy: Handling getToken call");
                 AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
+            } catch (SecurityException se) {
+                Slog.e(TAG, "GmsProxy: GetToken security error", se);
+                throw se;
             } catch (Exception e) {
-                Slog.w(TAG, "GmsProxy: GetToken error, returning mock token", e);
-                return "mock_gms_token_" + System.currentTimeMillis();
+                Slog.e(TAG, "GmsProxy: GetToken error", e);
+                throw e;
             }
         }
     }
