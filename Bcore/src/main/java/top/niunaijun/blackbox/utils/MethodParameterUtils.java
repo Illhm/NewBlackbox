@@ -1,5 +1,7 @@
 package top.niunaijun.blackbox.utils;
 
+import android.content.pm.PackageManager;
+
 import java.util.Arrays;
 import java.util.HashSet;
 
@@ -23,6 +25,9 @@ public class MethodParameterUtils {
         if (args == null) {
             return null;
         }
+        if (BActivityThread.getAppConfig() != null) {
+            return null;
+        }
         for (int i = 0; i < args.length; i++) {
             if (args[i] instanceof String) {
                 String value = (String) args[i];
@@ -33,6 +38,54 @@ public class MethodParameterUtils {
             }
         }
         return null;
+    }
+
+    public static void fixPkgUidForFramework(Object[] args) {
+        if (args == null) return;
+        int pkgIndex = -1;
+        int uidIndex = -1;
+        for (int i = 0; i < args.length; i++) {
+            if (pkgIndex < 0 && args[i] instanceof String) pkgIndex = i;
+            if (uidIndex < 0 && args[i] instanceof Integer) uidIndex = i;
+        }
+        if (pkgIndex < 0 || uidIndex < 0) return;
+        String pkg = (String) args[pkgIndex];
+        Integer uid = (Integer) args[uidIndex];
+        if (pkg == null || uid == null) return;
+        boolean belongs = packageBelongsToUid(pkg, uid);
+        Slog.i("MethodParameterUtils", "PkgUidFix: before pkg=" + pkg + ", uid=" + uid);
+        if (!belongs) {
+            if (uid == BlackBoxCore.getHostUid()) {
+                args[pkgIndex] = BlackBoxCore.getHostPkg();
+            } else {
+                String[] pkgs = BlackBoxCore.getContext().getPackageManager().getPackagesForUid(uid);
+                if (pkgs != null && pkgs.length > 0) {
+                    args[pkgIndex] = pkgs[0];
+                }
+            }
+        }
+        String outPkg = (String) args[pkgIndex];
+        boolean outBelongs = packageBelongsToUid(outPkg, uid);
+        Slog.i("MethodParameterUtils", "PkgUidFix: after pkg=" + outPkg + ", uid=" + uid);
+        Slog.i("MethodParameterUtils", "PkgUidFix: packageBelongsToUid=" + outBelongs);
+    }
+
+    private static boolean packageBelongsToUid(String pkg, int uid) {
+        if (pkg == null) return false;
+        PackageManager pm = BlackBoxCore.getContext().getPackageManager();
+        try {
+            String[] uidPackages = pm.getPackagesForUid(uid);
+            if (uidPackages == null) return false;
+            return pm.checkSignatures(uid, pm.getPackageUid(pkg, 0)) == PackageManager.SIGNATURE_MATCH
+                    && Arrays.asList(uidPackages).contains(pkg);
+        } catch (Throwable ignored) {
+            String[] pkgs = pm.getPackagesForUid(uid);
+            if (pkgs == null) return false;
+            for (String it : pkgs) {
+                if (pkg.equals(it)) return true;
+            }
+            return false;
+        }
     }
 
     public static void replaceAllAppPkg(Object[] args) {

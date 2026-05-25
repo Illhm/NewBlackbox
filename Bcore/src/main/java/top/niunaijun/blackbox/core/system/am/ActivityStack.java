@@ -470,6 +470,21 @@ public class ActivityStack {
         }
     }
 
+    public ActivityRecord findLaunchingActivityByRecordBinder(IBinder recordBinder) {
+        if (recordBinder == null) {
+            return null;
+        }
+        synchronized (mLaunchingActivities) {
+            for (ActivityRecord launching : mLaunchingActivities) {
+                if (launching == null) continue;
+                if (launching.equals(recordBinder) || launching == recordBinder) {
+                    return launching;
+                }
+            }
+        }
+        return null;
+    }
+
     public void onActivityResumed(int userId, IBinder token) {
         synchronized (mTasks) {
             synchronizeTasks();

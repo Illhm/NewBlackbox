@@ -12,7 +12,6 @@ import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.fake.hook.HookManager;
 import top.niunaijun.blackbox.fake.service.HCallbackProxy;
 import top.niunaijun.blackbox.proxy.record.ProxyActivityRecord;
-import top.niunaijun.blackbox.proxy.record.ProxyPendingRecord;
 import top.niunaijun.blackbox.utils.Slog;
 
 
@@ -30,11 +29,36 @@ public class ProxyActivity extends Activity {
 
 
         ProxyActivityRecord record = ProxyActivityRecord.create(getIntent());
+        Slog.i(TAG, "ProxyActivity: appConfig=" + BActivityThread.getAppConfig());
+        Slog.i(TAG, "ProxyActivity: virtualPkg=" + (record.mActivityInfo != null ? record.mActivityInfo.packageName : "null"));
+        if (BActivityThread.getAppConfig() == null && record.mActivityInfo != null) {
+            try {
+                BActivityThread.currentActivityThread().bindApplication(record.mActivityInfo.packageName, record.mActivityInfo.processName);
+            } catch (Throwable e) {
+                Slog.e(TAG, "ProxyActivity: failed to bind virtual application", e);
+            }
+        }
         if (record.mTarget != null) {
-            record.mTarget.setExtrasClassLoader(BlackBoxCore.getApplication().getClassLoader());
+            ClassLoader classLoader = null;
+            if (BlackBoxCore.getApplication() != null) {
+                classLoader = BlackBoxCore.getApplication().getClassLoader();
+            } else if (getApplication() != null) {
+                classLoader = getApplication().getClassLoader();
+            } else if (getBaseContext() != null) {
+                classLoader = getBaseContext().getClassLoader();
+            }
+            boolean contextReady = BlackBoxCore.getApplication() != null || getApplication() != null || getBaseContext() != null;
+            Slog.i(TAG, "ProxyActivity: virtualContextReady=" + contextReady);
+            Slog.i(TAG, "ProxyActivity: classLoaderReady=" + (classLoader != null));
+            if (classLoader != null) {
+                record.mTarget.setExtrasClassLoader(classLoader);
+            } else {
+                Slog.w(TAG, "ProxyActivity: missing proxy extras=" + getIntent().getExtras());
+            }
             startActivity(record.mTarget);
             return;
         }
+        Slog.w(TAG, "ProxyActivity: missing proxy extras=" + getIntent().getExtras());
     }
 
     public static class P0 extends ProxyActivity {

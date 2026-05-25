@@ -706,6 +706,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     args[i] = BActivityThread.getUserId();
                 }
             }
+            MethodParameterUtils.fixPkgUidForFramework(args);
 
             try {
                 return method.invoke(who, args);
@@ -786,6 +787,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             MethodParameterUtils.replaceFirstAppPkg(args);
+            MethodParameterUtils.fixPkgUidForFramework(args);
             int receiverIndex = getReceiverIndex();
             if (args[receiverIndex] != null) {
                 IIntentReceiver intentReceiver = (IIntentReceiver) args[receiverIndex];
@@ -837,6 +839,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             MethodParameterUtils.replaceFirstAppPkg(args);
+            MethodParameterUtils.fixPkgUidForFramework(args);
             int receiverIndex = 2;
             if (args[receiverIndex] != null) {
                 IIntentReceiver intentReceiver = (IIntentReceiver) args[receiverIndex];

@@ -111,9 +111,16 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
         if (process == null) {
             return;
         }
-        ActivityRecord record = (ActivityRecord) activityRecord;
         UserSpace userSpace = getOrCreateSpaceLocked(process.userId);
+        Slog.i(TAG, "BActivityManagerService: onActivityCreated token=" + token);
         synchronized (userSpace.mStack) {
+            ActivityRecord record = userSpace.mStack.findLaunchingActivityByRecordBinder(activityRecord);
+            Slog.i(TAG, "BActivityManagerService: resolved ActivityRecord=" + (record != null));
+            if (record == null) {
+                Slog.w(TAG, "BActivityManagerService: recovered ActivityRecord from pending launch=false");
+                return;
+            }
+            Slog.i(TAG, "BActivityManagerService: recovered ActivityRecord from pending launch=true");
             userSpace.mStack.onActivityCreated(process, taskId, token, record);
         }
     }
