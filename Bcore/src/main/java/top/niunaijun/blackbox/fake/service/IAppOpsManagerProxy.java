@@ -93,7 +93,7 @@ public class IAppOpsManagerProxy extends BinderInvocationStub {
         if (userIdArgIndex >= 0 && args[userIdArgIndex] instanceof Integer) {
             int userId = (Integer) args[userIdArgIndex];
             if (userId < 0 || userId > 1000) {
-                args[userIdArgIndex] = android.os.UserHandle.myUserId();
+                args[userIdArgIndex] = top.niunaijun.blackbox.utils.MethodParameterUtils.getFrameworkUserId();
             }
         }
 

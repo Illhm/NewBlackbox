@@ -61,7 +61,7 @@ public class MethodParameterUtils {
             return;
         }
         int before = (Integer) args[userIdIndex];
-        int expected = android.os.UserHandle.myUserId();
+        int expected = getFrameworkUserId();
         if (before < 0 || before > 1000) {
             args[userIdIndex] = expected;
         }
@@ -69,6 +69,10 @@ public class MethodParameterUtils {
                 + " beforeUserId=" + before + " afterUserId=" + args[userIdIndex]);
     }
 
+
+    public static int getFrameworkUserId() {
+        return 0;
+    }
     public static void fixFrameworkUid(Object[] args, String methodName) {
         if (args == null) return;
         int uidIndex = detectFrameworkUidIndex(args, methodName);
