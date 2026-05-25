@@ -14,6 +14,7 @@ import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
+import top.niunaijun.blackbox.utils.MethodParameterUtils;
 import top.niunaijun.blackbox.utils.Slog;
 
 public class IAppOpsManagerProxy extends BinderInvocationStub {
@@ -74,32 +75,38 @@ public class IAppOpsManagerProxy extends BinderInvocationStub {
     private static void maybeFixHostPackageUid(Object[] args, String methodName) {
         if (args == null || args.length == 0) return;
 
-        int hostUid = BlackBoxCore.getHostUid() > 0 ? BlackBoxCore.getHostUid() : Process.myUid();
+        int realUid = Process.myUid();
         int packageArgIndex = findPackageArgIndex(args);
         int uidArgIndex = findUidIndexNearPackage(args, packageArgIndex);
         int userIdArgIndex = findUserIdArgIndex(args, methodName);
 
-        Slog.i(TAG, "AppOpsFix: method=" + methodName);
-        Slog.i(TAG, "AppOpsFix: uidArgIndex=" + uidArgIndex);
-        Slog.i(TAG, "AppOpsFix: packageArgIndex=" + packageArgIndex);
-        Slog.i(TAG, "AppOpsFix: userIdArgIndex=" + userIdArgIndex);
+        Object beforePkg = packageArgIndex >= 0 ? args[packageArgIndex] : null;
+        Object beforeUid = uidArgIndex >= 0 ? args[uidArgIndex] : null;
 
-        if (packageArgIndex >= 0) {
-            args[packageArgIndex] = BlackBoxCore.getHostPkg();
+        String selectedPkg = MethodParameterUtils.resolveFrameworkCallerPackage(BlackBoxCore.getContext(), beforePkg instanceof String ? (String) beforePkg : null);
+        if (packageArgIndex >= 0 && selectedPkg != null) {
+            args[packageArgIndex] = selectedPkg;
         }
         if (uidArgIndex >= 0) {
-            args[uidArgIndex] = hostUid;
+            args[uidArgIndex] = realUid;
         }
         if (userIdArgIndex >= 0 && args[userIdArgIndex] instanceof Integer) {
             int userId = (Integer) args[userIdArgIndex];
             if (userId < 0 || userId > 1000) {
-                args[userIdArgIndex] = top.niunaijun.blackbox.utils.MethodParameterUtils.getFrameworkUserId();
+                args[userIdArgIndex] = MethodParameterUtils.getFrameworkUserId();
             }
         }
 
-        String resolvedPkg = resolveCallingPackageForUid(BlackBoxCore.getContext(), hostUid);
-        boolean belongs = BlackBoxCore.getHostPkg().equals(resolvedPkg);
-        Slog.i(TAG, "AppOpsFix: mode=framework pkg=" + (packageArgIndex >= 0 ? args[packageArgIndex] : "null") + " uid=" + (uidArgIndex >= 0 ? args[uidArgIndex] : "n/a"));
+        String[] realPkgs = null;
+        try { realPkgs = BlackBoxCore.getContext().getPackageManager().getPackagesForUid(realUid); } catch (Throwable ignored) {}
+        boolean belongs = selectedPkg != null && realPkgs != null && java.util.Arrays.asList(realPkgs).contains(selectedPkg);
+        Slog.i(TAG, "AppOpsFix: method=" + methodName);
+        Slog.i(TAG, "AppOpsFix: uidArgIndex=" + uidArgIndex);
+        Slog.i(TAG, "AppOpsFix: packageArgIndex=" + packageArgIndex);
+        Slog.i(TAG, "AppOpsFix: userIdArgIndex=" + userIdArgIndex);
+        Slog.i(TAG, "AppOpsFix: before uid=" + beforeUid + ", pkg=" + beforePkg);
+        Slog.i(TAG, "AppOpsFix: after uid=" + realUid + ", pkg=" + selectedPkg);
+        Slog.i(TAG, "AppOpsFix: realPackagesForUid=" + java.util.Arrays.toString(realPkgs));
         Slog.i(TAG, "AppOpsFix: packageBelongsToUid=" + belongs);
     }
 

@@ -41,6 +41,38 @@ public class MethodParameterUtils {
         return null;
     }
 
+    public static String resolveFrameworkCallerPackage(android.content.Context context, String originalPkg) {
+        int realUid = Process.myUid();
+        String[] realPkgs = null;
+        try {
+            realPkgs = context.getPackageManager().getPackagesForUid(realUid);
+        } catch (Throwable ignored) {}
+        Slog.i("MethodParameterUtils", "FrameworkIdentity: processUid=" + realUid);
+        Slog.i("MethodParameterUtils", "FrameworkIdentity: realPackagesForUid=" + Arrays.toString(realPkgs));
+        Slog.i("MethodParameterUtils", "FrameworkIdentity: originalPkg=" + originalPkg);
+        if (realPkgs == null || realPkgs.length == 0) {
+            Slog.w("MethodParameterUtils", "FrameworkIdentity: no real packages for uid=" + realUid + ", skip mutation");
+            return originalPkg;
+        }
+        String selected = null;
+        if (originalPkg != null) {
+            for (String p : realPkgs) if (originalPkg.equals(p)) { selected = p; break; }
+        }
+        String virtualPkg = BlackBoxCore.getAppPackageName();
+        if (selected == null && virtualPkg != null) {
+            for (String p : realPkgs) if (virtualPkg.equals(p)) { selected = p; break; }
+        }
+        if (selected == null) {
+            for (String p : realPkgs) if (BlackBoxCore.getHostPkg().equals(p)) { selected = p; break; }
+        }
+        if (selected == null) selected = realPkgs[0];
+        boolean belongs = false;
+        for (String p : realPkgs) if (selected.equals(p)) { belongs = true; break; }
+        Slog.i("MethodParameterUtils", "FrameworkIdentity: selectedPkg=" + selected);
+        Slog.i("MethodParameterUtils", "FrameworkIdentity: packageBelongsToUid=" + belongs);
+        return selected;
+    }
+
     public static void fixFrameworkCallerPackage(Object[] args, String methodName) {
         if (args == null) return;
         int pkgIndex = detectFrameworkCallerPackageIndex(args, methodName);
@@ -48,7 +80,10 @@ public class MethodParameterUtils {
             return;
         }
         String before = (String) args[pkgIndex];
-        args[pkgIndex] = BlackBoxCore.getHostPkg();
+        String selected = resolveFrameworkCallerPackage(BlackBoxCore.getContext(), before);
+        if (selected != null) {
+            args[pkgIndex] = selected;
+        }
         Slog.i("MethodParameterUtils", "FrameworkArgFix: method=" + methodName + " callerPackageIndex=" + pkgIndex
                 + " before=" + before + " after=" + args[pkgIndex]);
     }
@@ -98,8 +133,8 @@ public class MethodParameterUtils {
     }
 
     public static void logFrameworkPkgCheck() {
-        int hostUid = BlackBoxCore.getHostUid() > 0 ? BlackBoxCore.getHostUid() : Process.myUid();
-        String hostPkg = BlackBoxCore.getHostPkg();
+        int hostUid = Process.myUid();
+        String hostPkg = resolveFrameworkCallerPackage(BlackBoxCore.getContext(), BlackBoxCore.getHostPkg());
         boolean belongs = packageBelongsToUid(hostPkg, hostUid);
         try {
             String[] uidPackages = BlackBoxCore.getContext().getPackageManager().getPackagesForUid(hostUid);
@@ -121,10 +156,13 @@ public class MethodParameterUtils {
 
     private static int detectFrameworkUserIdIndex(Object[] args, String methodName) {
         if ("registerReceiverWithFeature".equals(methodName)) {
-            return args.length - 1;
+            if (args.length >= 9 && args[7] instanceof Integer && args[8] instanceof Integer) return 7;
+            if (args.length >= 8 && args[7] instanceof Integer) return 7;
+            return -1;
         }
         if ("registerReceiver".equals(methodName) || "registerReceiverForAllUsers".equals(methodName)) {
-            return args.length - 1;
+            if (args.length >= 7 && args[6] instanceof Integer) return 6;
+            return -1;
         }
         if ("broadcastIntent".equals(methodName) || "broadcastIntentWithFeature".equals(methodName)) {
             for (int i = args.length - 1; i >= 0; i--) {
@@ -147,6 +185,24 @@ public class MethodParameterUtils {
         return -1;
     }
 
+
+    public static int getRegisterReceiverUserIdIndex(Object[] args, String methodName) {
+        return detectFrameworkUserIdIndex(args, methodName);
+    }
+
+    public static int getRegisterReceiverFlagsIndex(Object[] args, String methodName) {
+        if ("registerReceiverWithFeature".equals(methodName) && args != null && args.length >= 9 && args[8] instanceof Integer) return 8;
+        return -1;
+    }
+
+    public static int getRegisterReceiverCallerFeatureIdIndex(Object[] args, String methodName) {
+        if ("registerReceiverWithFeature".equals(methodName) && args != null && args.length > 2 && args[2] instanceof String) return 2;
+        return -1;
+    }
+
+    public static int getRegisterReceiverCallerPackageIndex(Object[] args, String methodName) {
+        return detectFrameworkCallerPackageIndex(args, methodName);
+    }
     private static boolean packageBelongsToUid(String pkg, int uid) {
         if (pkg == null) return false;
         PackageManager pm = BlackBoxCore.getContext().getPackageManager();

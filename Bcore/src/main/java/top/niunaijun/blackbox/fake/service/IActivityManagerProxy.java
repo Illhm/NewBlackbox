@@ -492,7 +492,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     if (flagsIndex >= 0) {
                         int flags = MethodParameterUtils.toInt(args[flagsIndex]);
                         flags &= ~Context.BIND_EXTERNAL_SERVICE;
-                        args[flagsIndex] = flags;
+                        args[exportFlagsIndex] = flags;
                     }
                 }
                 args[callingPackageIndex] = BlackBoxCore.getHostPkg();
@@ -789,14 +789,32 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             String virtualPkg = MethodParameterUtils.replaceFirstAppPkg(args);
             String beforePkg = MethodParameterUtils.getFirstParam(args, String.class);
             Integer beforeUid = MethodParameterUtils.getFirstParam(args, Integer.class);
-            Slog.i(TAG, "RegisterReceiverFix: method=" + method.getName());
-            Slog.i(TAG, "RegisterReceiverFix: before callerPkg=" + beforePkg + ", userId=" + (args[args.length - 1]));
+            Slog.i(TAG, "RegisterReceiverDebug: method=" + method.getName());
+            Slog.i(TAG, "RegisterReceiverDebug: parameterCount=" + method.getParameterTypes().length);
+            for (int i = 0; i < args.length; i++) {
+                Object a = args[i];
+                Slog.i(TAG, "RegisterReceiverDebug: arg[" + i + "] type=" + (a == null ? "null" : a.getClass().getName()) + " value=" + String.valueOf(a));
+            }
+            int callerPackageIndex = MethodParameterUtils.getRegisterReceiverCallerPackageIndex(args, method.getName());
+            int callerFeatureIdIndex = MethodParameterUtils.getRegisterReceiverCallerFeatureIdIndex(args, method.getName());
+            int userIdIndex = MethodParameterUtils.getRegisterReceiverUserIdIndex(args, method.getName());
+            int flagsIndex = MethodParameterUtils.getRegisterReceiverFlagsIndex(args, method.getName());
+            Slog.i(TAG, "RegisterReceiverDebug: detected callerPackageIndex=" + callerPackageIndex);
+            Slog.i(TAG, "RegisterReceiverDebug: detected callerFeatureIdIndex=" + callerFeatureIdIndex);
+            Slog.i(TAG, "RegisterReceiverDebug: detected userIdIndex=" + userIdIndex);
+            Slog.i(TAG, "RegisterReceiverDebug: detected flagsIndex=" + flagsIndex);
+            Integer beforeUserId = (userIdIndex >= 0 && args[userIdIndex] instanceof Integer) ? (Integer) args[userIdIndex] : null;
+            Integer beforeFlags = (flagsIndex >= 0 && args[flagsIndex] instanceof Integer) ? (Integer) args[flagsIndex] : null;
+            Slog.i(TAG, "RegisterReceiverFix: before callerPkg=" + beforePkg + ", userId=" + beforeUserId + ", flags=" + beforeFlags);
             MethodParameterUtils.fixFrameworkIdentityForMethod(args, method.getName());
             String afterPkg = MethodParameterUtils.getFirstParam(args, String.class);
-            Integer afterUid = MethodParameterUtils.getFirstParam(args, Integer.class);
-            Slog.i(TAG, "RegisterReceiverFix: callerPackageIndex=1");
-            Slog.i(TAG, "RegisterReceiverFix: userIdIndex=" + (args.length - 1));
-            Slog.i(TAG, "RegisterReceiverFix: after callerPkg=" + afterPkg + ", userId=" + (args[args.length - 1]));
+            Integer afterUserId = (userIdIndex >= 0 && args[userIdIndex] instanceof Integer) ? (Integer) args[userIdIndex] : null;
+            Integer afterFlags = (flagsIndex >= 0 && args[flagsIndex] instanceof Integer) ? (Integer) args[flagsIndex] : null;
+            Slog.i(TAG, "RegisterReceiverFix: callerPackageIndex=" + callerPackageIndex);
+            Slog.i(TAG, "RegisterReceiverFix: userIdIndex=" + userIdIndex);
+            Slog.i(TAG, "RegisterReceiverFix: flagsIndex=" + flagsIndex);
+            Slog.i(TAG, "RegisterReceiverFix: after callerPkg=" + afterPkg + ", userId=" + afterUserId);
+            Slog.i(TAG, "RegisterReceiverFix: flags preserved as " + afterFlags);
             Slog.i(TAG, "RegisterReceiverFix: processUid=" + android.os.Process.myUid());
             Slog.i(TAG, "RegisterReceiverFix: virtualPkg=" + virtualPkg);
             int receiverIndex = getReceiverIndex();
@@ -817,12 +835,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             }
 
             if (BuildCompat.isU()) {
-                int flagsIndex = args.length - 1;
-                int flags = (int)args[flagsIndex];
+                int exportFlagsIndex = args.length - 1;
+                int flags = (int)args[exportFlagsIndex];
                 if((flags & RECEIVER_NOT_EXPORTED) == 0 && (flags & RECEIVER_EXPORTED) == 0){
                     flags |= RECEIVER_NOT_EXPORTED;
                 }
-                args[flagsIndex] = flags;
+                args[exportFlagsIndex] = flags;
             }
 
             return method.invoke(who, args);
@@ -852,14 +870,32 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             String virtualPkg = MethodParameterUtils.replaceFirstAppPkg(args);
             String beforePkg = MethodParameterUtils.getFirstParam(args, String.class);
             Integer beforeUid = MethodParameterUtils.getFirstParam(args, Integer.class);
-            Slog.i(TAG, "RegisterReceiverFix: method=" + method.getName());
-            Slog.i(TAG, "RegisterReceiverFix: before callerPkg=" + beforePkg + ", userId=" + (args[args.length - 1]));
+            Slog.i(TAG, "RegisterReceiverDebug: method=" + method.getName());
+            Slog.i(TAG, "RegisterReceiverDebug: parameterCount=" + method.getParameterTypes().length);
+            for (int i = 0; i < args.length; i++) {
+                Object a = args[i];
+                Slog.i(TAG, "RegisterReceiverDebug: arg[" + i + "] type=" + (a == null ? "null" : a.getClass().getName()) + " value=" + String.valueOf(a));
+            }
+            int callerPackageIndex = MethodParameterUtils.getRegisterReceiverCallerPackageIndex(args, method.getName());
+            int callerFeatureIdIndex = MethodParameterUtils.getRegisterReceiverCallerFeatureIdIndex(args, method.getName());
+            int userIdIndex = MethodParameterUtils.getRegisterReceiverUserIdIndex(args, method.getName());
+            int flagsIndex = MethodParameterUtils.getRegisterReceiverFlagsIndex(args, method.getName());
+            Slog.i(TAG, "RegisterReceiverDebug: detected callerPackageIndex=" + callerPackageIndex);
+            Slog.i(TAG, "RegisterReceiverDebug: detected callerFeatureIdIndex=" + callerFeatureIdIndex);
+            Slog.i(TAG, "RegisterReceiverDebug: detected userIdIndex=" + userIdIndex);
+            Slog.i(TAG, "RegisterReceiverDebug: detected flagsIndex=" + flagsIndex);
+            Integer beforeUserId = (userIdIndex >= 0 && args[userIdIndex] instanceof Integer) ? (Integer) args[userIdIndex] : null;
+            Integer beforeFlags = (flagsIndex >= 0 && args[flagsIndex] instanceof Integer) ? (Integer) args[flagsIndex] : null;
+            Slog.i(TAG, "RegisterReceiverFix: before callerPkg=" + beforePkg + ", userId=" + beforeUserId + ", flags=" + beforeFlags);
             MethodParameterUtils.fixFrameworkIdentityForMethod(args, method.getName());
             String afterPkg = MethodParameterUtils.getFirstParam(args, String.class);
-            Integer afterUid = MethodParameterUtils.getFirstParam(args, Integer.class);
-            Slog.i(TAG, "RegisterReceiverFix: callerPackageIndex=1");
-            Slog.i(TAG, "RegisterReceiverFix: userIdIndex=" + (args.length - 1));
-            Slog.i(TAG, "RegisterReceiverFix: after callerPkg=" + afterPkg + ", userId=" + (args[args.length - 1]));
+            Integer afterUserId = (userIdIndex >= 0 && args[userIdIndex] instanceof Integer) ? (Integer) args[userIdIndex] : null;
+            Integer afterFlags = (flagsIndex >= 0 && args[flagsIndex] instanceof Integer) ? (Integer) args[flagsIndex] : null;
+            Slog.i(TAG, "RegisterReceiverFix: callerPackageIndex=" + callerPackageIndex);
+            Slog.i(TAG, "RegisterReceiverFix: userIdIndex=" + userIdIndex);
+            Slog.i(TAG, "RegisterReceiverFix: flagsIndex=" + flagsIndex);
+            Slog.i(TAG, "RegisterReceiverFix: after callerPkg=" + afterPkg + ", userId=" + afterUserId);
+            Slog.i(TAG, "RegisterReceiverFix: flags preserved as " + afterFlags);
             Slog.i(TAG, "RegisterReceiverFix: processUid=" + android.os.Process.myUid());
             Slog.i(TAG, "RegisterReceiverFix: virtualPkg=" + virtualPkg);
             int receiverIndex = 2;

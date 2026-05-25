@@ -48,19 +48,21 @@ public final class AttributionSourceCompatFixer {
 
     public static int resolveCorrectFrameworkUid(Context context, String virtualPkg, String processName, int incomingSourceUid) {
         int callerUid = Binder.getCallingUid();
-        if (callerUid <= 0 || callerUid == Process.myUid()) {
-            return BlackBoxCore.getHostUid();
+        if (callerUid > 0 && callerUid != Process.myUid()) {
+            return callerUid;
         }
-        return callerUid;
+        return Process.myUid();
     }
 
     private static void fixAttributionSource(Object src, String virtualPkg, String processName) {
         int incomingUid = safeInt(readField(src, "uid"), safeInt(readField(src, "mUid"), -1));
         String oldPkg = safeString(readField(src, "packageName"), safeString(readField(src, "mPackageName"), null));
         int resolvedUid = resolveCorrectFrameworkUid(BlackBoxCore.getContext(), virtualPkg, processName, incomingUid);
-        String resolvedPkg = resolvePkgForUid(resolvedUid, virtualPkg);
-        if (resolvedPkg == null) resolvedPkg = BlackBoxCore.getHostPkg();
-        if (shouldLog(processName+"|before")) Slog.d(TAG, "AttributionSourceFix: before uid=" + incomingUid + ", pkg=" + oldPkg + ", callerUid=" + Binder.getCallingUid());
+        String resolvedPkg = resolvePkgForUid(resolvedUid, oldPkg != null ? oldPkg : virtualPkg);
+        if (resolvedPkg == null) resolvedPkg = oldPkg;
+        int callerUid = Process.myUid();
+        if (shouldLog(processName+"|before")) Slog.d(TAG, "AttributionSourceFix: callerUid=" + callerUid);
+        if (shouldLog(processName+"|before2")) Slog.d(TAG, "AttributionSourceFix: before sourceUid=" + incomingUid + ", sourcePkg=" + oldPkg + ", callerUid=" + Binder.getCallingUid());
 
         boolean mutated = setAttrFields(src, resolvedUid, resolvedPkg);
         if (!mutated) {
@@ -72,9 +74,11 @@ public final class AttributionSourceCompatFixer {
         }
         Object next = invokeNoArg(src, "getNext");
         if (next != null) fixAttributionSource(next, virtualPkg, processName);
-        if (shouldLog(processName+"|after")) Slog.d(TAG, "AttributionSourceFix: after uid=" + safeInt(readField(src, "uid"), safeInt(readField(src, "mUid"), -1))
-                + ", pkg=" + safeString(readField(src, "packageName"), safeString(readField(src, "mPackageName"), null))
-                + ", callerUid=" + Binder.getCallingUid());
+        int afterUid = safeInt(readField(src, "uid"), safeInt(readField(src, "mUid"), -1));
+        String afterPkg = safeString(readField(src, "packageName"), safeString(readField(src, "mPackageName"), null));
+        boolean belongs = pkgBelongsToUid(afterPkg, afterUid);
+        if (shouldLog(processName+"|after")) Slog.d(TAG, "AttributionSourceFix: after sourceUid=" + afterUid
+                + ", sourcePkg=" + afterPkg + ", packageBelongsToUid=" + belongs + ", callerUid=" + Binder.getCallingUid());
 
         if (oldPkg != null && !oldPkg.equals(resolvedPkg)) {
             Slog.i(TAG, "pkgChanged oldPkg=" + oldPkg + " newPkg=" + resolvedPkg + " uid=" + resolvedUid
@@ -111,6 +115,16 @@ public final class AttributionSourceCompatFixer {
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    private static boolean pkgBelongsToUid(String pkg, int uid) {
+        if (pkg == null || uid <= 0) return false;
+        try {
+            String[] pkgs = BlackBoxCore.getContext().getPackageManager().getPackagesForUid(uid);
+            if (pkgs == null) return false;
+            for (String p : pkgs) if (pkg.equals(p)) return true;
+        } catch (Throwable ignored) {}
+        return false;
     }
 
     private static String resolvePkgForUid(int uid, String preferred) {
