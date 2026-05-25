@@ -75,53 +75,63 @@ public class IAppOpsManagerProxy extends BinderInvocationStub {
         if (args == null || args.length == 0) return;
 
         int hostUid = BlackBoxCore.getHostUid() > 0 ? BlackBoxCore.getHostUid() : Process.myUid();
-        int hostPkgIndex = -1;
-        int anyPkgIndex = -1;
-        for (int i = 0; i < args.length; i++) {
-            if (args[i] instanceof String) {
-                if (anyPkgIndex < 0) anyPkgIndex = i;
-                if (BlackBoxCore.getHostPkg().equals(args[i])) {
-                    hostPkgIndex = i;
-                    break;
-                }
+        int packageArgIndex = findPackageArgIndex(args);
+        int uidArgIndex = findUidIndexNearPackage(args, packageArgIndex);
+        int userIdArgIndex = findUserIdArgIndex(args, methodName);
+
+        Slog.i(TAG, "AppOpsFix: method=" + methodName);
+        Slog.i(TAG, "AppOpsFix: uidArgIndex=" + uidArgIndex);
+        Slog.i(TAG, "AppOpsFix: packageArgIndex=" + packageArgIndex);
+        Slog.i(TAG, "AppOpsFix: userIdArgIndex=" + userIdArgIndex);
+
+        if (packageArgIndex >= 0) {
+            args[packageArgIndex] = BlackBoxCore.getHostPkg();
+        }
+        if (uidArgIndex >= 0) {
+            args[uidArgIndex] = hostUid;
+        }
+        if (userIdArgIndex >= 0 && args[userIdArgIndex] instanceof Integer) {
+            int userId = (Integer) args[userIdArgIndex];
+            if (userId < 0 || userId > 1000) {
+                args[userIdArgIndex] = android.os.UserHandle.myUserId();
             }
         }
-        if (hostPkgIndex < 0) hostPkgIndex = anyPkgIndex;
-        if (hostPkgIndex < 0) return;
 
-        int uidIndex = findUidIndexNearPackage(args, hostPkgIndex);
-        if (uidIndex < 0) return;
-
-        args[hostPkgIndex] = BlackBoxCore.getHostPkg();
-        args[uidIndex] = hostUid;
         String resolvedPkg = resolveCallingPackageForUid(BlackBoxCore.getContext(), hostUid);
         boolean belongs = BlackBoxCore.getHostPkg().equals(resolvedPkg);
-        Slog.i(TAG, "AppOpsFix: mode=framework pkg=" + args[hostPkgIndex] + " uid=" + args[uidIndex]);
+        Slog.i(TAG, "AppOpsFix: mode=framework pkg=" + (packageArgIndex >= 0 ? args[packageArgIndex] : "null") + " uid=" + (uidArgIndex >= 0 ? args[uidArgIndex] : "n/a"));
         Slog.i(TAG, "AppOpsFix: packageBelongsToUid=" + belongs);
     }
 
-    private static int findUidIndexNearPackage(Object[] args, int packageIndex) {
-        // AppOps signatures typically place uid immediately before packageName.
-        if (packageIndex - 1 >= 0 && args[packageIndex - 1] instanceof Integer) {
-            return packageIndex - 1;
-        }
-        // Fallback for variants where uid is the next field.
-        if (packageIndex + 1 < args.length && args[packageIndex + 1] instanceof Integer) {
-            return packageIndex + 1;
-        }
-        // Last resort: select the closest positive int around package index.
-        int best = -1;
-        int bestDistance = Integer.MAX_VALUE;
+    private static int findPackageArgIndex(Object[] args) {
         for (int i = 0; i < args.length; i++) {
-            if (args[i] instanceof Integer && ((Integer) args[i]) > 0) {
-                int d = Math.abs(i - packageIndex);
-                if (d < bestDistance) {
-                    best = i;
-                    bestDistance = d;
-                }
+            if (args[i] instanceof String) {
+                return i;
             }
         }
-        return best;
+        return -1;
+    }
+
+    private static int findUserIdArgIndex(Object[] args, String methodName) {
+        if ("checkPackage".equals(methodName) || "checkOperation".equals(methodName)
+                || "noteOperation".equals(methodName) || "startOperation".equals(methodName)
+                || "finishOperation".equals(methodName) || "checkOpNoThrow".equals(methodName)
+                || "noteOpNoThrow".equals(methodName) || "startOpNoThrow".equals(methodName)
+                || "noteProxyOperation".equals(methodName)) {
+            return -1;
+        }
+        return -1;
+    }
+
+
+    private static int findUidIndexNearPackage(Object[] args, int packageIndex) {
+        if (packageIndex > 0 && args[packageIndex - 1] instanceof Integer) {
+            return packageIndex - 1;
+        }
+        if (packageIndex >= 0 && packageIndex + 1 < args.length && args[packageIndex + 1] instanceof Integer) {
+            return packageIndex + 1;
+        }
+        return -1;
     }
 
     @ProxyMethod("checkPackage")

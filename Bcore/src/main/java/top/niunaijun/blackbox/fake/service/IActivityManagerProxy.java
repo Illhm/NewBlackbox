@@ -706,7 +706,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     args[i] = BActivityThread.getUserId();
                 }
             }
-            MethodParameterUtils.fixPkgUidForFramework(args);
+            MethodParameterUtils.fixFrameworkIdentityForMethod(args, method.getName());
 
             try {
                 return method.invoke(who, args);
@@ -789,11 +789,15 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             String virtualPkg = MethodParameterUtils.replaceFirstAppPkg(args);
             String beforePkg = MethodParameterUtils.getFirstParam(args, String.class);
             Integer beforeUid = MethodParameterUtils.getFirstParam(args, Integer.class);
-            Slog.i(TAG, "RegisterReceiverFix: framework caller before pkg=" + beforePkg + ", uid=" + beforeUid);
-            MethodParameterUtils.fixPkgUidForFramework(args);
+            Slog.i(TAG, "RegisterReceiverFix: method=" + method.getName());
+            Slog.i(TAG, "RegisterReceiverFix: before callerPkg=" + beforePkg + ", userId=" + (args[args.length - 1]));
+            MethodParameterUtils.fixFrameworkIdentityForMethod(args, method.getName());
             String afterPkg = MethodParameterUtils.getFirstParam(args, String.class);
             Integer afterUid = MethodParameterUtils.getFirstParam(args, Integer.class);
-            Slog.i(TAG, "RegisterReceiverFix: framework caller after pkg=" + afterPkg + ", uid=" + afterUid);
+            Slog.i(TAG, "RegisterReceiverFix: callerPackageIndex=1");
+            Slog.i(TAG, "RegisterReceiverFix: userIdIndex=" + (args.length - 1));
+            Slog.i(TAG, "RegisterReceiverFix: after callerPkg=" + afterPkg + ", userId=" + (args[args.length - 1]));
+            Slog.i(TAG, "RegisterReceiverFix: processUid=" + android.os.Process.myUid());
             Slog.i(TAG, "RegisterReceiverFix: virtualPkg=" + virtualPkg);
             int receiverIndex = getReceiverIndex();
             if (args[receiverIndex] != null) {
@@ -848,11 +852,15 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             String virtualPkg = MethodParameterUtils.replaceFirstAppPkg(args);
             String beforePkg = MethodParameterUtils.getFirstParam(args, String.class);
             Integer beforeUid = MethodParameterUtils.getFirstParam(args, Integer.class);
-            Slog.i(TAG, "RegisterReceiverFix: framework caller before pkg=" + beforePkg + ", uid=" + beforeUid);
-            MethodParameterUtils.fixPkgUidForFramework(args);
+            Slog.i(TAG, "RegisterReceiverFix: method=" + method.getName());
+            Slog.i(TAG, "RegisterReceiverFix: before callerPkg=" + beforePkg + ", userId=" + (args[args.length - 1]));
+            MethodParameterUtils.fixFrameworkIdentityForMethod(args, method.getName());
             String afterPkg = MethodParameterUtils.getFirstParam(args, String.class);
             Integer afterUid = MethodParameterUtils.getFirstParam(args, Integer.class);
-            Slog.i(TAG, "RegisterReceiverFix: framework caller after pkg=" + afterPkg + ", uid=" + afterUid);
+            Slog.i(TAG, "RegisterReceiverFix: callerPackageIndex=1");
+            Slog.i(TAG, "RegisterReceiverFix: userIdIndex=" + (args.length - 1));
+            Slog.i(TAG, "RegisterReceiverFix: after callerPkg=" + afterPkg + ", userId=" + (args[args.length - 1]));
+            Slog.i(TAG, "RegisterReceiverFix: processUid=" + android.os.Process.myUid());
             Slog.i(TAG, "RegisterReceiverFix: virtualPkg=" + virtualPkg);
             int receiverIndex = 2;
             if (args[receiverIndex] != null) {

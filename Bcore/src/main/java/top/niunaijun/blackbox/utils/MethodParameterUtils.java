@@ -1,6 +1,7 @@
 package top.niunaijun.blackbox.utils;
 
 import android.content.pm.PackageManager;
+import android.os.Process;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -40,27 +41,106 @@ public class MethodParameterUtils {
         return null;
     }
 
-    public static void fixPkgUidForFramework(Object[] args) {
+    public static void fixFrameworkCallerPackage(Object[] args, String methodName) {
         if (args == null) return;
-        int pkgIndex = -1;
-        int uidIndex = -1;
-        for (int i = 0; i < args.length; i++) {
-            if (pkgIndex < 0 && args[i] instanceof String) pkgIndex = i;
-            if (uidIndex < 0 && args[i] instanceof Integer) uidIndex = i;
+        int pkgIndex = detectFrameworkCallerPackageIndex(args, methodName);
+        if (pkgIndex < 0 || !(args[pkgIndex] instanceof String)) {
+            return;
         }
-        if (pkgIndex < 0 || uidIndex < 0) return;
-        String pkg = (String) args[pkgIndex];
-        Integer uid = (Integer) args[uidIndex];
-        if (pkg == null || uid == null) return;
-        Slog.i("MethodParameterUtils", "PkgUidFix: before pkg=" + pkg + ", uid=" + uid);
-        int hostUid = BlackBoxCore.getHostUid() > 0 ? BlackBoxCore.getHostUid() : android.os.Process.myUid();
+        String before = (String) args[pkgIndex];
         args[pkgIndex] = BlackBoxCore.getHostPkg();
+        Slog.i("MethodParameterUtils", "FrameworkArgFix: method=" + methodName + " callerPackageIndex=" + pkgIndex
+                + " before=" + before + " after=" + args[pkgIndex]);
+    }
+
+    public static void fixFrameworkUserId(Object[] args, String methodName) {
+        if (args == null) return;
+        int userIdIndex = detectFrameworkUserIdIndex(args, methodName);
+        if (userIdIndex < 0 || !(args[userIdIndex] instanceof Integer)) {
+            Slog.i("MethodParameterUtils", "FrameworkArgFix: method=" + methodName + " userIdIndex=-1");
+            return;
+        }
+        int before = (Integer) args[userIdIndex];
+        int expected = android.os.UserHandle.myUserId();
+        if (before < 0 || before > 1000) {
+            args[userIdIndex] = expected;
+        }
+        Slog.i("MethodParameterUtils", "FrameworkArgFix: method=" + methodName + " userIdIndex=" + userIdIndex
+                + " beforeUserId=" + before + " afterUserId=" + args[userIdIndex]);
+    }
+
+    public static void fixFrameworkUid(Object[] args, String methodName) {
+        if (args == null) return;
+        int uidIndex = detectFrameworkUidIndex(args, methodName);
+        if (uidIndex < 0 || !(args[uidIndex] instanceof Integer)) {
+            Slog.i("MethodParameterUtils", "FrameworkArgFix: method=" + methodName + " skipped unknown int arg index=-1");
+            return;
+        }
+        int hostUid = BlackBoxCore.getHostUid() > 0 ? BlackBoxCore.getHostUid() : Process.myUid();
+        int before = (Integer) args[uidIndex];
         args[uidIndex] = hostUid;
-        String outPkg = (String) args[pkgIndex];
-        int outUid = (Integer) args[uidIndex];
-        boolean outBelongs = packageBelongsToUid(outPkg, outUid);
-        Slog.i("MethodParameterUtils", "PkgUidFix: after pkg=" + outPkg + ", uid=" + outUid);
-        Slog.i("MethodParameterUtils", "PkgUidFix: packageBelongsToUid=" + outBelongs);
+        Slog.i("MethodParameterUtils", "FrameworkArgFix: method=" + methodName + " uidIndex=" + uidIndex
+                + " beforeUid=" + before + " afterUid=" + hostUid);
+    }
+
+    public static void fixFrameworkIdentityForMethod(Object[] args, String methodName) {
+        fixFrameworkCallerPackage(args, methodName);
+        if ("registerReceiver".equals(methodName) || "registerReceiverWithFeature".equals(methodName)
+                || "registerReceiverForAllUsers".equals(methodName) || "broadcastIntent".equals(methodName)
+                || "broadcastIntentWithFeature".equals(methodName)) {
+            fixFrameworkUserId(args, methodName);
+        }
+        logFrameworkPkgCheck();
+    }
+
+    public static void logFrameworkPkgCheck() {
+        int hostUid = BlackBoxCore.getHostUid() > 0 ? BlackBoxCore.getHostUid() : Process.myUid();
+        String hostPkg = BlackBoxCore.getHostPkg();
+        boolean belongs = packageBelongsToUid(hostPkg, hostUid);
+        try {
+            String[] uidPackages = BlackBoxCore.getContext().getPackageManager().getPackagesForUid(hostUid);
+            Slog.i("MethodParameterUtils", "FrameworkPkgCheck: realPackagesForUid=" + Arrays.toString(uidPackages));
+        } catch (Throwable ignored) {
+        }
+        Slog.i("MethodParameterUtils", "FrameworkPkgCheck: pkg=" + hostPkg + " uid=" + hostUid + " belongs=" + belongs);
+    }
+
+    private static int detectFrameworkCallerPackageIndex(Object[] args, String methodName) {
+        if ("registerReceiverWithFeature".equals(methodName)) {
+            return args.length > 1 && args[1] instanceof String ? 1 : ArrayUtils.indexOfFirst(args, String.class);
+        }
+        if ("registerReceiver".equals(methodName) || "registerReceiverForAllUsers".equals(methodName)) {
+            return args.length > 1 && args[1] instanceof String ? 1 : ArrayUtils.indexOfFirst(args, String.class);
+        }
+        return ArrayUtils.indexOfFirst(args, String.class);
+    }
+
+    private static int detectFrameworkUserIdIndex(Object[] args, String methodName) {
+        if ("registerReceiverWithFeature".equals(methodName)) {
+            return args.length - 1;
+        }
+        if ("registerReceiver".equals(methodName) || "registerReceiverForAllUsers".equals(methodName)) {
+            return args.length - 1;
+        }
+        if ("broadcastIntent".equals(methodName) || "broadcastIntentWithFeature".equals(methodName)) {
+            for (int i = args.length - 1; i >= 0; i--) {
+                if (args[i] instanceof Integer) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int detectFrameworkUidIndex(Object[] args, String methodName) {
+        if (methodName == null) return -1;
+        if (methodName.contains("AppOps") || methodName.contains("check") || methodName.contains("note") || methodName.contains("startOp")) {
+            int pkgIndex = ArrayUtils.indexOfFirst(args, String.class);
+            if (pkgIndex > 0 && args[pkgIndex - 1] instanceof Integer) {
+                return pkgIndex - 1;
+            }
+        }
+        return -1;
     }
 
     private static boolean packageBelongsToUid(String pkg, int uid) {
@@ -69,14 +149,11 @@ public class MethodParameterUtils {
         try {
             String[] uidPackages = pm.getPackagesForUid(uid);
             if (uidPackages == null) return false;
-            return pm.checkSignatures(uid, pm.getPackageUid(pkg, 0)) == PackageManager.SIGNATURE_MATCH
-                    && Arrays.asList(uidPackages).contains(pkg);
-        } catch (Throwable ignored) {
-            String[] pkgs = pm.getPackagesForUid(uid);
-            if (pkgs == null) return false;
-            for (String it : pkgs) {
+            for (String it : uidPackages) {
                 if (pkg.equals(it)) return true;
             }
+            return false;
+        } catch (Throwable ignored) {
             return false;
         }
     }
