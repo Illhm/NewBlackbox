@@ -24,13 +24,18 @@ public class WorkManagerProxy extends ClassInvocationStub {
         try {
             Context context = BlackBoxCore.getContext();
             if (context != null) {
-                
-                Class<?> workManagerClass = Class.forName("androidx.work.WorkManager");
-                Method getInstanceMethod = workManagerClass.getMethod("getInstance", Context.class);
-                return getInstanceMethod.invoke(null, context);
+                try {
+                    Class<?> workManagerClass = Class.forName("androidx.work.WorkManager");
+                    Method getInstanceMethod = workManagerClass.getMethod("getInstance", Context.class);
+                    return getInstanceMethod.invoke(null, context);
+                } catch (Throwable primary) {
+                    Class<?> implClass = Class.forName("androidx.work.impl.WorkManagerImpl");
+                    Method getInstanceMethod = implClass.getMethod("getInstance", Context.class);
+                    return getInstanceMethod.invoke(null, context);
+                }
             }
         } catch (Exception e) {
-            Slog.w(TAG, "Failed to get WorkManager instance", e);
+            Slog.w(TAG, "WorkManagerProxy: WorkManager unavailable, skipping hook gracefully", e);
         }
         return null;
     }

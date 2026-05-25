@@ -1,6 +1,7 @@
 package top.niunaijun.blackbox.fake.hook;
 
 import android.os.Build;
+import android.app.Application;
 import android.util.Log;
 
 import java.util.HashMap;
@@ -89,6 +90,7 @@ import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.fake.service.ISettingsProviderProxy;
 import top.niunaijun.blackbox.fake.service.FeatureFlagUtilsProxy;
 import top.niunaijun.blackbox.fake.service.WorkManagerProxy;
+import top.niunaijun.blackbox.utils.ProcessHookGuard;
 
 
 
@@ -104,6 +106,14 @@ public class HookManager {
     }
 
     public void init() {
+        String processName = resolveProcessName();
+        if (!ProcessHookGuard.shouldInstallVirtualHooks(BlackBoxCore.getContext(), processName)) {
+            Slog.i(TAG, "ProcessHookGuard: host core services enabled");
+            Slog.i(TAG, "ProcessHookGuard: host client fake hooks skipped");
+            addInjector(AppInstrumentation.get());
+            injectAll();
+            return;
+        }
         if (BlackBoxCore.get().isBlackProcess() || BlackBoxCore.get().isServerProcess()) {
             addInjector(new IDisplayManagerProxy());
             addInjector(new OsStub());
@@ -232,6 +242,19 @@ public class HookManager {
             }
         }
         injectAll();
+    }
+
+    private String resolveProcessName() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                String name = Application.getProcessName();
+                if (name != null && !name.isEmpty()) {
+                    return name;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return BlackBoxCore.getContext().getPackageName();
     }
 
     public void checkEnv(Class<?> clazz) {

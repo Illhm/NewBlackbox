@@ -55,6 +55,10 @@ import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.ParceledListSliceCompat;
 import top.niunaijun.blackbox.utils.compat.TaskDescriptionCompat;
 import top.niunaijun.blackbox.utils.Slog;
+import top.niunaijun.blackbox.utils.IntentSanitizer;
+import top.niunaijun.blackbox.utils.GmsCompatibilityLayer;
+import top.niunaijun.blackbox.utils.ProxyIntentGuard;
+import top.niunaijun.blackbox.utils.ServiceBindLoopGuard;
 
 import static android.content.Context.RECEIVER_EXPORTED;
 import static android.content.Context.RECEIVER_NOT_EXPORTED;
@@ -64,6 +68,12 @@ import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 
 @ScanClass(ActivityManagerCommonProxy.class)
 public class IActivityManagerProxy extends ClassInvocationStub {
+
+    private static final String GMS_INTERNAL_BROADCAST_PERMISSION = "com.google.android.gms.permission.INTERNAL_BROADCAST";
+
+    private static boolean isGmsInternalPermission(String permission) {
+        return GMS_INTERNAL_BROADCAST_PERMISSION.equals(permission);
+    }
 
     private static boolean shouldBypassPendingProxy(Intent intent) {
         if (intent == null) {
@@ -81,7 +91,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
         return "com.android.vending".equals(pkg);
     }
 
-#<<<<<<< codex/fix-array-null-pointer-exceptions-6gx866
     private static boolean shouldForceVirtualProvider(String authority) {
         if (authority == null) {
             return false;
@@ -92,8 +101,6 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 || authority.startsWith("com.google.android.webview")
                 || authority.startsWith("com.google.android.trichromelibrary");
     }
-#=======
-#>>>>>>> main
 
     public static final String TAG = "ActivityManagerStub";
 
@@ -163,7 +170,8 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class GetContentProvider extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            int authIndex = getAuthIndex();
+            int authIndex = getAuthIndex(args);
+            int userIndex = getUserIndex(args, authIndex);
             Object auth = args[authIndex];
             Object content = null;
 
@@ -192,7 +200,20 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                         && sandboxHasGms;
 
                 if (isSystemAuth || (isGmsAuth && !sandboxHasGms)) {
-                    content = method.invoke(who, args);
+                    try {
+                        content = method.invoke(who, args);
+                    } catch (SecurityException se) {
+                        if (!isGmsAuth) {
+                            throw se;
+                        }
+                        Slog.w(TAG, "Host provider permission check failed for " + authStr
+                                + ", retrying with host package identity.", se);
+                        if (BuildCompat.isQ()) {
+                            args[1] = BlackBoxCore.getHostPkg();
+                        }
+                        args[userIndex] = BlackBoxCore.getHostUserId();
+                        content = method.invoke(who, args);
+                    }
                     ContentProviderDelegate.update(content, authStr);
                     return content;
                 }
@@ -227,7 +248,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                                 .acquireContentProviderClient(providerInfo);
                     }
                     args[authIndex] = ProxyManifest.getProxyAuthorities(appConfig.bpid);
-                    args[getUserIndex()] = BlackBoxCore.getHostUserId();
+                    args[userIndex] = BlackBoxCore.getHostUserId();
                 }
                 if (providerBinder == null) {
                     if (forceVirtualProvider) {
@@ -240,7 +261,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                                 + " could not be bound for user " + userId
                                 + ", falling back to host.");
                         args[authIndex] = authStr;
-                        args[getUserIndex()] = userId;
+                        args[userIndex] = userId;
                         content = method.invoke(who, args);
                         ContentProviderDelegate.update(content, authStr);
                         return content;
@@ -263,17 +284,33 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             return method.invoke(who, args);
         }
 
-        protected int getAuthIndex() {
-            
-            if (BuildCompat.isQ()) {
-                return 2;
-            } else {
-                return 1;
+        protected int getAuthIndex(Object[] args) {
+            if (args == null || args.length == 0) {
+                return BuildCompat.isQ() ? 2 : 1;
             }
+            for (int i = args.length - 1; i >= 0; i--) {
+                Object value = args[i];
+                if (value instanceof String) {
+                    String candidate = (String) value;
+                    if (candidate.contains(".") || "settings".equals(candidate)
+                            || "media".equals(candidate) || "telephony".equals(candidate)) {
+                        return i;
+                    }
+                }
+            }
+            return BuildCompat.isQ() ? 2 : 1;
         }
 
-        protected int getUserIndex() {
-            return getAuthIndex() + 1;
+        protected int getUserIndex(Object[] args, int authIndex) {
+            if (args == null || args.length == 0) {
+                return authIndex + 1;
+            }
+            for (int i = authIndex + 1; i < args.length; i++) {
+                if (args[i] instanceof Integer) {
+                    return i;
+                }
+            }
+            return authIndex + 1;
         }
     }
 
@@ -404,8 +441,19 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             Intent intent = (Intent) args[2];
             String resolvedType = (String) args[3];
             IServiceConnection connection = (IServiceConnection) args[4];
+            String requestId = intent != null ? ProxyIntentGuard.ensureRequestId(intent) : "null";
 
             
+            if (intent != null && ProxyIntentGuard.isSelfProxyTarget(intent, BlackBoxCore.getHostPkg())) {
+                Slog.w("ServiceBindGuard", "actionTaken=BYPASS_ALREADY_PROXIED requestId=" + requestId + " target=" + intent.getComponent());
+                return method.invoke(who, args);
+            }
+            if (intent != null) {
+                boolean trustedGms = GmsCompatibilityLayer.isGmsRelatedPackage(intent.getPackage())
+                        || (intent.getComponent() != null && GmsCompatibilityLayer.isGmsRelatedPackage(intent.getComponent().getPackageName()));
+                intent = IntentSanitizer.sanitize(intent, trustedGms);
+                args[2] = intent;
+            }
             if (intent == null) {
                 Slog.w(TAG, "BindServiceCommon: Intent is null, proceeding with original call");
                 return method.invoke(who, args);
@@ -415,6 +463,9 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
             int userId = intent.getIntExtra("_B_|_UserId", -1);
             userId = userId == -1 ? BActivityThread.getUserId() : userId;
+            if (ServiceBindLoopGuard.isDuplicate(intent, BActivityThread.getAppPackageName(), android.os.Process.myUid(), userId, requestId)) {
+                return null;
+            }
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveService(intent, 0, resolvedType, userId);
             if (resolveInfo != null || AppSystemEnv.isOpenPackage(intent.getComponent())) {
                 Intent proxyIntent = BlackBoxCore.getBActivityManager().bindService(intent,
@@ -441,7 +492,7 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     if (flagsIndex >= 0) {
                         int flags = MethodParameterUtils.toInt(args[flagsIndex]);
                         flags &= ~Context.BIND_EXTERNAL_SERVICE;
-                        args[flagsIndex] = flags;
+                        args[exportFlagsIndex] = flags;
                     }
                 }
                 args[callingPackageIndex] = BlackBoxCore.getHostPkg();
@@ -646,14 +697,27 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 ProxyBroadcastRecord.saveStub(proxyIntent, intent, BActivityThread.getUserId());
                 args[intentIndex] = proxyIntent;
             }
-            
+
             for (int i = 0; i < args.length; i++) {
                 Object o = args[i];
                 if (o instanceof String[]) {
                     args[i] = null;
+                } else if (o instanceof Integer && ((Integer) o) == -1) {
+                    args[i] = BActivityThread.getUserId();
                 }
             }
-            return method.invoke(who, args);
+            MethodParameterUtils.fixFrameworkIdentityForMethod(args, method.getName());
+
+            try {
+                return method.invoke(who, args);
+            } catch (SecurityException e) {
+                String message = e.getMessage();
+                if (message != null && message.contains("INTERACT_ACROSS_USERS")) {
+                    Slog.w(TAG, "BroadcastIntent: Intercepted cross-user broadcast denial, returning BROADCAST_SUCCESS", e);
+                    return 0;
+                }
+                throw e;
+            }
         }
 
         int getIntentIndex(Object[] args) {
@@ -722,7 +786,37 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class RegisterReceiverWithFeature extends MethodHook{
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            MethodParameterUtils.replaceFirstAppPkg(args);
+            String virtualPkg = MethodParameterUtils.replaceFirstAppPkg(args);
+            String beforePkg = MethodParameterUtils.getFirstParam(args, String.class);
+            Integer beforeUid = MethodParameterUtils.getFirstParam(args, Integer.class);
+            Slog.i(TAG, "RegisterReceiverDebug: method=" + method.getName());
+            Slog.i(TAG, "RegisterReceiverDebug: parameterCount=" + method.getParameterTypes().length);
+            for (int i = 0; i < args.length; i++) {
+                Object a = args[i];
+                Slog.i(TAG, "RegisterReceiverDebug: arg[" + i + "] type=" + (a == null ? "null" : a.getClass().getName()) + " value=" + String.valueOf(a));
+            }
+            int callerPackageIndex = MethodParameterUtils.getRegisterReceiverCallerPackageIndex(args, method.getName());
+            int callerFeatureIdIndex = MethodParameterUtils.getRegisterReceiverCallerFeatureIdIndex(args, method.getName());
+            int userIdIndex = MethodParameterUtils.getRegisterReceiverUserIdIndex(args, method.getName());
+            int flagsIndex = MethodParameterUtils.getRegisterReceiverFlagsIndex(args, method.getName());
+            Slog.i(TAG, "RegisterReceiverDebug: detected callerPackageIndex=" + callerPackageIndex);
+            Slog.i(TAG, "RegisterReceiverDebug: detected callerFeatureIdIndex=" + callerFeatureIdIndex);
+            Slog.i(TAG, "RegisterReceiverDebug: detected userIdIndex=" + userIdIndex);
+            Slog.i(TAG, "RegisterReceiverDebug: detected flagsIndex=" + flagsIndex);
+            Integer beforeUserId = (userIdIndex >= 0 && args[userIdIndex] instanceof Integer) ? (Integer) args[userIdIndex] : null;
+            Integer beforeFlags = (flagsIndex >= 0 && args[flagsIndex] instanceof Integer) ? (Integer) args[flagsIndex] : null;
+            Slog.i(TAG, "RegisterReceiverFix: before callerPkg=" + beforePkg + ", userId=" + beforeUserId + ", flags=" + beforeFlags);
+            MethodParameterUtils.fixFrameworkIdentityForMethod(args, method.getName());
+            String afterPkg = MethodParameterUtils.getFirstParam(args, String.class);
+            Integer afterUserId = (userIdIndex >= 0 && args[userIdIndex] instanceof Integer) ? (Integer) args[userIdIndex] : null;
+            Integer afterFlags = (flagsIndex >= 0 && args[flagsIndex] instanceof Integer) ? (Integer) args[flagsIndex] : null;
+            Slog.i(TAG, "RegisterReceiverFix: callerPackageIndex=" + callerPackageIndex);
+            Slog.i(TAG, "RegisterReceiverFix: userIdIndex=" + userIdIndex);
+            Slog.i(TAG, "RegisterReceiverFix: flagsIndex=" + flagsIndex);
+            Slog.i(TAG, "RegisterReceiverFix: after callerPkg=" + afterPkg + ", userId=" + afterUserId);
+            Slog.i(TAG, "RegisterReceiverFix: flags preserved as " + afterFlags);
+            Slog.i(TAG, "RegisterReceiverFix: processUid=" + android.os.Process.myUid());
+            Slog.i(TAG, "RegisterReceiverFix: virtualPkg=" + virtualPkg);
             int receiverIndex = getReceiverIndex();
             if (args[receiverIndex] != null) {
                 IIntentReceiver intentReceiver = (IIntentReceiver) args[receiverIndex];
@@ -741,12 +835,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
             }
 
             if (BuildCompat.isU()) {
-                int flagsIndex = args.length - 1;
-                int flags = (int)args[flagsIndex];
+                int exportFlagsIndex = args.length - 1;
+                int flags = (int)args[exportFlagsIndex];
                 if((flags & RECEIVER_NOT_EXPORTED) == 0 && (flags & RECEIVER_EXPORTED) == 0){
                     flags |= RECEIVER_NOT_EXPORTED;
                 }
-                args[flagsIndex] = flags;
+                args[exportFlagsIndex] = flags;
             }
 
             return method.invoke(who, args);
@@ -773,7 +867,37 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            MethodParameterUtils.replaceFirstAppPkg(args);
+            String virtualPkg = MethodParameterUtils.replaceFirstAppPkg(args);
+            String beforePkg = MethodParameterUtils.getFirstParam(args, String.class);
+            Integer beforeUid = MethodParameterUtils.getFirstParam(args, Integer.class);
+            Slog.i(TAG, "RegisterReceiverDebug: method=" + method.getName());
+            Slog.i(TAG, "RegisterReceiverDebug: parameterCount=" + method.getParameterTypes().length);
+            for (int i = 0; i < args.length; i++) {
+                Object a = args[i];
+                Slog.i(TAG, "RegisterReceiverDebug: arg[" + i + "] type=" + (a == null ? "null" : a.getClass().getName()) + " value=" + String.valueOf(a));
+            }
+            int callerPackageIndex = MethodParameterUtils.getRegisterReceiverCallerPackageIndex(args, method.getName());
+            int callerFeatureIdIndex = MethodParameterUtils.getRegisterReceiverCallerFeatureIdIndex(args, method.getName());
+            int userIdIndex = MethodParameterUtils.getRegisterReceiverUserIdIndex(args, method.getName());
+            int flagsIndex = MethodParameterUtils.getRegisterReceiverFlagsIndex(args, method.getName());
+            Slog.i(TAG, "RegisterReceiverDebug: detected callerPackageIndex=" + callerPackageIndex);
+            Slog.i(TAG, "RegisterReceiverDebug: detected callerFeatureIdIndex=" + callerFeatureIdIndex);
+            Slog.i(TAG, "RegisterReceiverDebug: detected userIdIndex=" + userIdIndex);
+            Slog.i(TAG, "RegisterReceiverDebug: detected flagsIndex=" + flagsIndex);
+            Integer beforeUserId = (userIdIndex >= 0 && args[userIdIndex] instanceof Integer) ? (Integer) args[userIdIndex] : null;
+            Integer beforeFlags = (flagsIndex >= 0 && args[flagsIndex] instanceof Integer) ? (Integer) args[flagsIndex] : null;
+            Slog.i(TAG, "RegisterReceiverFix: before callerPkg=" + beforePkg + ", userId=" + beforeUserId + ", flags=" + beforeFlags);
+            MethodParameterUtils.fixFrameworkIdentityForMethod(args, method.getName());
+            String afterPkg = MethodParameterUtils.getFirstParam(args, String.class);
+            Integer afterUserId = (userIdIndex >= 0 && args[userIdIndex] instanceof Integer) ? (Integer) args[userIdIndex] : null;
+            Integer afterFlags = (flagsIndex >= 0 && args[flagsIndex] instanceof Integer) ? (Integer) args[flagsIndex] : null;
+            Slog.i(TAG, "RegisterReceiverFix: callerPackageIndex=" + callerPackageIndex);
+            Slog.i(TAG, "RegisterReceiverFix: userIdIndex=" + userIdIndex);
+            Slog.i(TAG, "RegisterReceiverFix: flagsIndex=" + flagsIndex);
+            Slog.i(TAG, "RegisterReceiverFix: after callerPkg=" + afterPkg + ", userId=" + afterUserId);
+            Slog.i(TAG, "RegisterReceiverFix: flags preserved as " + afterFlags);
+            Slog.i(TAG, "RegisterReceiverFix: processUid=" + android.os.Process.myUid());
+            Slog.i(TAG, "RegisterReceiverFix: virtualPkg=" + virtualPkg);
             int receiverIndex = 2;
             if (args[receiverIndex] != null) {
                 IIntentReceiver intentReceiver = (IIntentReceiver) args[receiverIndex];
@@ -859,7 +983,12 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                 Slog.d(TAG, "ActivityManager checkPermission: Granting storage/media permission: " + permission);
                 return PackageManager.PERMISSION_GRANTED;
             }
-            
+
+            if (isGmsInternalPermission(permission)) {
+                Slog.d(TAG, "ActivityManager checkPermission: Granting GMS internal permission: " + permission);
+                return PackageManager.PERMISSION_GRANTED;
+            }
+
             return method.invoke(who, args);
         }
     }

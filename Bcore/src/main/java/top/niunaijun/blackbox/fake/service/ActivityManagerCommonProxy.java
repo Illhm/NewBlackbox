@@ -17,6 +17,10 @@ import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.fake.provider.FileProviderHandler;
 import top.niunaijun.blackbox.utils.ComponentUtils;
+import top.niunaijun.blackbox.utils.ProxyIntentGuard;
+import top.niunaijun.blackbox.utils.IntentSanitizer;
+import top.niunaijun.blackbox.utils.GmsCompatibilityLayer;
+import top.niunaijun.blackbox.utils.ActivityResultBridge;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
@@ -28,6 +32,21 @@ import static android.content.pm.PackageManager.GET_META_DATA;
 public class ActivityManagerCommonProxy {
     public static final String TAG = "CommonStub";
 
+    private static String resolveVirtualCallingPackage(IBinder token) {
+        String packageName = null;
+        try {
+            if (token != null) {
+                packageName = BlackBoxCore.getBActivityManager().getCallingPackage(token, BActivityThread.getUserId());
+            }
+        } catch (Throwable ignored) {
+        }
+        if (packageName == null || packageName.length() == 0 || BlackBoxCore.getHostPkg().equals(packageName)) {
+            packageName = BActivityThread.getAppPackageName();
+        }
+        return packageName;
+    }
+
+
     @ProxyMethod("startActivity")
     public static class StartActivity extends MethodHook {
         @Override
@@ -37,10 +56,49 @@ public class ActivityManagerCommonProxy {
             Slog.d(TAG, "Hook in : " + intent);
             assert intent != null;
 
-            if (maybeRouteSandboxAccountPicker(intent)) {
+            if (ProxyIntentGuard.isSelfProxyTarget(intent, BlackBoxCore.getHostPkg())) {
+                Slog.w(TAG, "Dropping self-proxy loop intent: " + intent);
+                return 0;
+            }
+            String requestId = ProxyIntentGuard.ensureRequestId(intent);
+            boolean trustedGms = GmsCompatibilityLayer.shouldBypassProxyForTrustedGms(intent)
+                    || GmsCompatibilityLayer.isGoogleLoginAction(intent);
+            if (ProxyIntentGuard.shouldDropAsLoop(intent, BActivityThread.getAppPackageName())) {
+                Slog.w(TAG, "Detected repeated intent loop, dropping. requestId=" + requestId + " intent=" + intent);
+                return 0;
+            }
+            Intent sanitizedIntent = IntentSanitizer.sanitize(intent, trustedGms);
+            args[getIntentIndex(args)] = sanitizedIntent;
+            intent = sanitizedIntent;
+
+            if (trustedGms) {
+                String beforeCalling = findCallingPackageArg(args);
+                rewriteCallingPackageArg(args, BActivityThread.getAppPackageName());
+                String afterCalling = findCallingPackageArg(args);
+                Slog.i(TAG, "AccountPickerRoute: startActivity callingPackage before=" + beforeCalling);
+                Slog.i(TAG, "AccountPickerRoute: startActivity callingPackage after=" + afterCalling);
+                Slog.i(TAG, "AccountPickerRoute: launchedFromPackage=" + BActivityThread.getAppPackageName());
+                Slog.i(TAG, "AccountPickerRoute: resultToVirtualToken=" + StartActivityCompat.getResultTo(args));
+            }
+
+            if (trustedGms) {
+                Slog.i(TAG, "AccountPickerRoute: using virtual GMS activity");
+                String virtualPkg = BActivityThread.getAppPackageName();
+                rewriteGoogleAuthExtras(sanitizedIntent, virtualPkg);
+                Slog.i(TAG, "GoogleAuthRoute: virtualCallerPkg=" + virtualPkg + ", hostPkg=" + BlackBoxCore.getHostPkg() + ", targetPkg=" + (sanitizedIntent.getComponent()!=null?sanitizedIntent.getComponent().getPackageName():sanitizedIntent.getPackage()));
+                Slog.i(TAG, "GMS trusted dispatch BYPASS_PROXY requestId=" + requestId + " intent=" + sanitizedIntent);
+                ActivityResultBridge.put(new ActivityResultBridge.RequestRecord(
+                        requestId,
+                        BActivityThread.getAppPackageName(),
+                        StartActivityCompat.getRequestCode(args),
+                        StartActivityCompat.getResultTo(args),
+                        sanitizedIntent));
                 return method.invoke(who, args);
             }
 
+            if (maybeRouteSandboxAccountPicker(intent)) {
+                return method.invoke(who, args);
+            }
 
             if (intent.getParcelableExtra("_B_|_target_") != null) {
                 return method.invoke(who, args);
@@ -114,13 +172,14 @@ public class ActivityManagerCommonProxy {
             return 0;
         }
 
+        private int getIntentIndex(Object[] args) {
+            if (BuildCompat.isR()) return 3;
+            for (int i = 0; i < args.length; i++) if (args[i] instanceof Intent) return i;
+            return 2;
+        }
+
         private Intent getIntent(Object[] args) {
-            int index;
-            if (BuildCompat.isR()) {
-                index = 3;
-            } else {
-                index = 2;
-            }
+            int index = getIntentIndex(args);
             if (args[index] instanceof Intent) {
                 return (Intent) args[index];
             }
@@ -130,6 +189,65 @@ public class ActivityManagerCommonProxy {
                 }
             }
             return null;
+        }
+
+        private String findCallingPackageArg(Object[] args) {
+            if (args == null) {
+                return null;
+            }
+            for (Object arg : args) {
+                if (!(arg instanceof String)) continue;
+                String value = (String) arg;
+                if (value == null) continue;
+                if (value.equals(BlackBoxCore.getHostPkg())
+                        || value.equals(BActivityThread.getAppPackageName())
+                        || value.startsWith("com.google.android.")) {
+                    return value;
+                }
+            }
+            return null;
+        }
+
+        private void rewriteCallingPackageArg(Object[] args, String virtualPkg) {
+            if (args == null || virtualPkg == null || virtualPkg.isEmpty()) {
+                return;
+            }
+            for (int i = 0; i < args.length; i++) {
+                Object arg = args[i];
+                if (!(arg instanceof String)) continue;
+                String value = (String) arg;
+                if (BlackBoxCore.getHostPkg().equals(value)) {
+                    args[i] = virtualPkg;
+                    return;
+                }
+            }
+        }
+
+        private void rewriteGoogleAuthExtras(Intent intent, String virtualPkg) {
+            if (intent == null || virtualPkg == null || virtualPkg.isEmpty()) {
+                return;
+            }
+            Bundle extras = intent.getExtras();
+            if (extras == null || extras.isEmpty()) {
+                return;
+            }
+            String[] keys = new String[]{
+                    "androidPackageName",
+                    "clientPackageName",
+                    "callingPackage",
+                    "realClientPackageName",
+                    "serviceId",
+                    "appPackageName"
+            };
+            for (String key : keys) {
+                Object value = extras.get(key);
+                if (value instanceof String && BlackBoxCore.getHostPkg().equals(value)) {
+                    extras.putString(key, virtualPkg);
+                    Slog.i(TAG, "GoogleAuthRoute: rewritten AccountPicker caller from "
+                            + BlackBoxCore.getHostPkg() + " to " + virtualPkg);
+                }
+            }
+            intent.replaceExtras(extras);
         }
 
         /**
@@ -269,7 +387,7 @@ public class ActivityManagerCommonProxy {
     public static class getCallingPackage extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            return BlackBoxCore.getBActivityManager().getCallingPackage((IBinder) args[0], BActivityThread.getUserId());
+            return resolveVirtualCallingPackage((IBinder) args[0]);
         }
     }
 
@@ -277,7 +395,33 @@ public class ActivityManagerCommonProxy {
     public static class getCallingActivity extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            return BlackBoxCore.getBActivityManager().getCallingActivity((IBinder) args[0], BActivityThread.getUserId());
+            ComponentName calling = BlackBoxCore.getBActivityManager().getCallingActivity((IBinder) args[0], BActivityThread.getUserId());
+            if (calling == null || BlackBoxCore.getHostPkg().equals(calling.getPackageName())) {
+                return new ComponentName(BActivityThread.getAppPackageName(), BActivityThread.getAppPackageName());
+            }
+            return calling;
         }
     }
+
+    @ProxyMethod("getLaunchedFromPackage")
+    public static class getLaunchedFromPackage extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            IBinder token = args != null && args.length > 0 && args[0] instanceof IBinder ? (IBinder) args[0] : null;
+            return resolveVirtualCallingPackage(token);
+        }
+    }
+
+    @ProxyMethod("getLaunchedFromUid")
+    public static class getLaunchedFromUid extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            int uid = BActivityThread.getUid();
+            if (uid <= 0) {
+                uid = BActivityThread.getBUid();
+            }
+            return uid;
+        }
+    }
+
 }

@@ -1,9 +1,13 @@
 package top.niunaijun.blackbox.fake.service;
 
 import android.content.Context;
+import android.os.Binder;
 import android.os.IBinder;
+import android.os.Looper;
+import android.os.RemoteException;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 
 import black.android.os.BRServiceManager;
 import top.niunaijun.blackbox.BlackBoxCore;
@@ -11,35 +15,118 @@ import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
 import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.utils.Slog;
+import top.niunaijun.blackbox.utils.AttributionSourceCompatFixer;
 
 
 public class GmsProxy extends BinderInvocationStub {
     public static final String TAG = "GmsProxy";
+    private static final Object BINDER_LOCK = new Object();
+    private static volatile IBinder sCachedBinder;
+    private static volatile Object sLazyProxy;
+    private static final IBinder sLazyBinder = new Binder();
 
     public GmsProxy() {
-        super(BRServiceManager.get().getService("gms"));
+        super(BRServiceManager.get().getService("gms") != null ? BRServiceManager.get().getService("gms") : new Binder());
     }
 
     @Override
     protected Object getWho() {
-        IBinder binder = BRServiceManager.get().getService("gms");
-        if (binder == null) {
-            Slog.e(TAG, "Failed to get gms service binder");
+        Object real = resolveRealBroker();
+        if (real != null) {
+            return real;
+        }
+        return createLazyProxy();
+    }
+
+    private Object resolveRealBroker() {
+        IBinder binder;
+        synchronized (BINDER_LOCK) {
+            binder = sCachedBinder;
+            if (binder != null && binder.isBinderAlive()) {
+                Object iface = toBrokerInterface(binder);
+                Slog.i(TAG, "GmsProxy: real broker resolved=" + (iface != null));
+                return iface;
+            }
+            if (binder != null && !binder.isBinderAlive()) {
+                Slog.w(TAG, "GmsProxy: binder died, clearing cache");
+                sCachedBinder = null;
+            }
+        }
+
+        boolean retryEnabled = !"false".equalsIgnoreCase(System.getProperty("blackbox.fix.gmsproxy.retry.enabled", "true"));
+        int attempts = retryEnabled ? 3 : 1;
+        IBinder fetched = null;
+        Slog.i(TAG, "GmsProxy: resolving binder on first call method=getWho");
+        for (int i = 0; i < attempts && fetched == null; i++) {
+            fetched = BRServiceManager.get().getService("gms");
+            if (fetched == null) {
+                Slog.w(TAG, "GmsProxy: waiting for gms service, attempt=" + (i + 1));
+                if (retryEnabled && Looper.myLooper() != Looper.getMainLooper()) {
+                    try { Thread.sleep(80L); } catch (InterruptedException ignored) {}
+                }
+            }
+        }
+        if (fetched == null) {
+            Slog.i(TAG, "GmsProxy: lazy mode, gms process not running yet");
+            Slog.i(TAG, "GmsProxy: real broker resolved=false");
             return null;
         }
+        try {
+            fetched.linkToDeath(() -> {
+                synchronized (BINDER_LOCK) {
+                    sCachedBinder = null;
+                }
+                Slog.w(TAG, "GmsProxy: binder died, clearing cache");
+            }, 0);
+        } catch (RemoteException ignored) {
+        }
+        synchronized (BINDER_LOCK) {
+            sCachedBinder = fetched;
+        }
+        Object iface = toBrokerInterface(fetched);
+        Slog.i(TAG, "GmsProxy: real broker resolved=" + (iface != null));
+        return iface;
+    }
+
+    private Object toBrokerInterface(IBinder binder) {
         try {
             Class<?> stubClass = Class.forName("com.google.android.gms.common.api.internal.IGmsServiceBroker$Stub");
             Method asInterfaceMethod = stubClass.getMethod("asInterface", IBinder.class);
             Object iface = asInterfaceMethod.invoke(null, binder);
             if (iface != null) {
-                Slog.d(TAG, "Successfully obtained IGmsServiceBroker interface");
+                Slog.d(TAG, "GmsProxy: acquired binder after virtual gms start");
                 return iface;
-            } else {
-                Slog.e(TAG, "Reflection succeeded but returned null interface");
-                return null;
             }
+            return null;
         } catch (Exception e) {
             Slog.e(TAG, "Failed to get IGmsServiceBroker interface", e);
+            return null;
+        }
+    }
+
+
+    private Object createLazyProxy() {
+        if (sLazyProxy != null) return sLazyProxy;
+        try {
+            Class<?> ifaceClass = Class.forName("com.google.android.gms.common.api.internal.IGmsServiceBroker");
+            Object proxy = Proxy.newProxyInstance(ifaceClass.getClassLoader(), new Class[]{ifaceClass, android.os.IInterface.class}, (obj, method, args) -> {
+                if ("asBinder".equals(method.getName())) {
+                    return sLazyBinder;
+                }
+                Slog.i(TAG, "GmsProxy: resolving real binder on method=" + method.getName());
+                Object real = resolveRealBroker();
+                if (real == null) {
+                    throw new IllegalStateException("gms binder unresolved in lazy proxy");
+                }
+                return method.invoke(real, args);
+            });
+            sLazyProxy = proxy;
+            Slog.i(TAG, "GmsProxy: installed lazy proxy binder");
+            Slog.i(TAG, "GmsProxy: lazy proxy type=" + proxy.getClass().getName());
+            Slog.i(TAG, "GmsProxy: lazy proxy asBinder available=" + (((android.os.IInterface) proxy).asBinder() != null));
+            return proxy;
+        } catch (Throwable e) {
+            Slog.e(TAG, "GmsProxy: failed to install lazy proxy binder", e);
             return null;
         }
     }
@@ -64,11 +151,15 @@ public class GmsProxy extends BinderInvocationStub {
                 if (args != null && args.length > 0) {
                     String callingPackage = (String) args[0];
                     if ("com.google.android.gms".equals(callingPackage)) {
-                        
-                        args[0] = BlackBoxCore.getHostPkg();
-                        Slog.d(TAG, "GmsProxy: Fixed calling package from com.google.android.gms to " + BlackBoxCore.getHostPkg());
+                        String virtualPkg = top.niunaijun.blackbox.app.BActivityThread.getAppPackageName();
+                        if (virtualPkg != null && !virtualPkg.equals(BlackBoxCore.getHostPkg())) {
+                            args[0] = virtualPkg;
+                            Slog.i(TAG, "GoogleAuthRoute: virtualCallerPkg=" + virtualPkg + ", hostPkg=" + BlackBoxCore.getHostPkg() + ", targetPkg=com.google.android.gms");
+                            Slog.i(TAG, "GoogleAuthRoute: rewritten AccountPicker caller from " + BlackBoxCore.getHostPkg() + " to " + virtualPkg);
+                        }
                     }
                 }
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.e(TAG, "GmsProxy: Error in getService", e);
@@ -84,6 +175,7 @@ public class GmsProxy extends BinderInvocationStub {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.e(TAG, "GmsProxy: Error in getServiceBroker", e);
@@ -100,11 +192,14 @@ public class GmsProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
                 Slog.d(TAG, "GmsProxy: Handling authenticate call");
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
+            } catch (SecurityException se) {
+                Slog.e(TAG, "GmsProxy: Authentication security error", se);
+                throw se;
             } catch (Exception e) {
-                Slog.w(TAG, "GmsProxy: Authentication error, returning success", e);
-                
-                return createMockAuthResult();
+                Slog.e(TAG, "GmsProxy: Authentication error", e);
+                throw e;
             }
         }
     }
@@ -116,6 +211,7 @@ public class GmsProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
                 Slog.d(TAG, "GmsProxy: Handling getAccount call");
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GmsProxy: GetAccount error, returning null", e);
@@ -131,10 +227,14 @@ public class GmsProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
                 Slog.d(TAG, "GmsProxy: Handling getToken call");
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
+            } catch (SecurityException se) {
+                Slog.e(TAG, "GmsProxy: GetToken security error", se);
+                throw se;
             } catch (Exception e) {
-                Slog.w(TAG, "GmsProxy: GetToken error, returning mock token", e);
-                return "mock_gms_token_" + System.currentTimeMillis();
+                Slog.e(TAG, "GmsProxy: GetToken error", e);
+                throw e;
             }
         }
     }
@@ -146,6 +246,7 @@ public class GmsProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
                 Slog.d(TAG, "GmsProxy: Handling invalidateToken call");
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GmsProxy: InvalidateToken error, ignoring", e);
@@ -161,6 +262,7 @@ public class GmsProxy extends BinderInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
                 Slog.d(TAG, "GmsProxy: Handling clearToken call");
+                AttributionSourceCompatFixer.fixArgsForFrameworkCall(args);
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GmsProxy: ClearToken error, ignoring", e);
