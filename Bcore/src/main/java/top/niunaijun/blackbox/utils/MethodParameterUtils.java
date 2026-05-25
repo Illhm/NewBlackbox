@@ -52,21 +52,14 @@ public class MethodParameterUtils {
         String pkg = (String) args[pkgIndex];
         Integer uid = (Integer) args[uidIndex];
         if (pkg == null || uid == null) return;
-        boolean belongs = packageBelongsToUid(pkg, uid);
         Slog.i("MethodParameterUtils", "PkgUidFix: before pkg=" + pkg + ", uid=" + uid);
-        if (!belongs) {
-            if (uid == BlackBoxCore.getHostUid()) {
-                args[pkgIndex] = BlackBoxCore.getHostPkg();
-            } else {
-                String[] pkgs = BlackBoxCore.getContext().getPackageManager().getPackagesForUid(uid);
-                if (pkgs != null && pkgs.length > 0) {
-                    args[pkgIndex] = pkgs[0];
-                }
-            }
-        }
+        int hostUid = BlackBoxCore.getHostUid() > 0 ? BlackBoxCore.getHostUid() : android.os.Process.myUid();
+        args[pkgIndex] = BlackBoxCore.getHostPkg();
+        args[uidIndex] = hostUid;
         String outPkg = (String) args[pkgIndex];
-        boolean outBelongs = packageBelongsToUid(outPkg, uid);
-        Slog.i("MethodParameterUtils", "PkgUidFix: after pkg=" + outPkg + ", uid=" + uid);
+        int outUid = (Integer) args[uidIndex];
+        boolean outBelongs = packageBelongsToUid(outPkg, outUid);
+        Slog.i("MethodParameterUtils", "PkgUidFix: after pkg=" + outPkg + ", uid=" + outUid);
         Slog.i("MethodParameterUtils", "PkgUidFix: packageBelongsToUid=" + outBelongs);
     }
 

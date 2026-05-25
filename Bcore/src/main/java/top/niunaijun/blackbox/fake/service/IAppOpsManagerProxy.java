@@ -76,28 +76,28 @@ public class IAppOpsManagerProxy extends BinderInvocationStub {
 
         int hostUid = BlackBoxCore.getHostUid() > 0 ? BlackBoxCore.getHostUid() : Process.myUid();
         int hostPkgIndex = -1;
+        int anyPkgIndex = -1;
         for (int i = 0; i < args.length; i++) {
-            if (args[i] instanceof String && BlackBoxCore.getHostPkg().equals(args[i])) {
-                hostPkgIndex = i;
-                break;
+            if (args[i] instanceof String) {
+                if (anyPkgIndex < 0) anyPkgIndex = i;
+                if (BlackBoxCore.getHostPkg().equals(args[i])) {
+                    hostPkgIndex = i;
+                    break;
+                }
             }
         }
+        if (hostPkgIndex < 0) hostPkgIndex = anyPkgIndex;
         if (hostPkgIndex < 0) return;
 
         int uidIndex = findUidIndexNearPackage(args, hostPkgIndex);
         if (uidIndex < 0) return;
 
-        int uid = (Integer) args[uidIndex];
-        String resolvedPkg = resolveCallingPackageForUid(BlackBoxCore.getContext(), uid);
-        if (resolvedPkg != null && !BlackBoxCore.getHostPkg().equals(resolvedPkg)) {
-            args[hostPkgIndex] = resolvedPkg;
-            Slog.w(TAG, "AppOps package mismatch in " + methodName + ", replacing host package with " + resolvedPkg + " for uid=" + uid);
-            return;
-        }
-        if (uid > 0 && uid != hostUid) {
-            args[uidIndex] = hostUid;
-            Slog.d(TAG, "Fixed AppOps uid mismatch in " + methodName + " at index " + uidIndex + ": " + uid + " -> " + hostUid);
-        }
+        args[hostPkgIndex] = BlackBoxCore.getHostPkg();
+        args[uidIndex] = hostUid;
+        String resolvedPkg = resolveCallingPackageForUid(BlackBoxCore.getContext(), hostUid);
+        boolean belongs = BlackBoxCore.getHostPkg().equals(resolvedPkg);
+        Slog.i(TAG, "AppOpsFix: mode=framework pkg=" + args[hostPkgIndex] + " uid=" + args[uidIndex]);
+        Slog.i(TAG, "AppOpsFix: packageBelongsToUid=" + belongs);
     }
 
     private static int findUidIndexNearPackage(Object[] args, int packageIndex) {

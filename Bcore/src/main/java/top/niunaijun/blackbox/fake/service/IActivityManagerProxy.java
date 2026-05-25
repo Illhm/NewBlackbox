@@ -786,8 +786,15 @@ public class IActivityManagerProxy extends ClassInvocationStub {
     public static class RegisterReceiverWithFeature extends MethodHook{
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            MethodParameterUtils.replaceFirstAppPkg(args);
+            String virtualPkg = MethodParameterUtils.replaceFirstAppPkg(args);
+            String beforePkg = MethodParameterUtils.getFirstParam(args, String.class);
+            Integer beforeUid = MethodParameterUtils.getFirstParam(args, Integer.class);
+            Slog.i(TAG, "RegisterReceiverFix: framework caller before pkg=" + beforePkg + ", uid=" + beforeUid);
             MethodParameterUtils.fixPkgUidForFramework(args);
+            String afterPkg = MethodParameterUtils.getFirstParam(args, String.class);
+            Integer afterUid = MethodParameterUtils.getFirstParam(args, Integer.class);
+            Slog.i(TAG, "RegisterReceiverFix: framework caller after pkg=" + afterPkg + ", uid=" + afterUid);
+            Slog.i(TAG, "RegisterReceiverFix: virtualPkg=" + virtualPkg);
             int receiverIndex = getReceiverIndex();
             if (args[receiverIndex] != null) {
                 IIntentReceiver intentReceiver = (IIntentReceiver) args[receiverIndex];
@@ -838,8 +845,15 @@ public class IActivityManagerProxy extends ClassInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            MethodParameterUtils.replaceFirstAppPkg(args);
+            String virtualPkg = MethodParameterUtils.replaceFirstAppPkg(args);
+            String beforePkg = MethodParameterUtils.getFirstParam(args, String.class);
+            Integer beforeUid = MethodParameterUtils.getFirstParam(args, Integer.class);
+            Slog.i(TAG, "RegisterReceiverFix: framework caller before pkg=" + beforePkg + ", uid=" + beforeUid);
             MethodParameterUtils.fixPkgUidForFramework(args);
+            String afterPkg = MethodParameterUtils.getFirstParam(args, String.class);
+            Integer afterUid = MethodParameterUtils.getFirstParam(args, Integer.class);
+            Slog.i(TAG, "RegisterReceiverFix: framework caller after pkg=" + afterPkg + ", uid=" + afterUid);
+            Slog.i(TAG, "RegisterReceiverFix: virtualPkg=" + virtualPkg);
             int receiverIndex = 2;
             if (args[receiverIndex] != null) {
                 IIntentReceiver intentReceiver = (IIntentReceiver) args[receiverIndex];
